@@ -1,0 +1,69 @@
+name: Release
+
+# Builds the installer and extension zips on GitHub and publishes a release.
+# Trigger: push a tag like v1.0.1 (its version must match tauri.conf.json).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content app/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ("v$version" -ne $env:TAG) { throw "Tag $env:TAG doesn't match app version $version" }
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install JS dependencies
+        run: |
+          npm ci --prefix app
+          npm ci --prefix extension
+
+      - name: Test
+        run: |
+          npm --prefix app run build
+          cargo test --workspace
+
+      - name: Build installer (also builds swoop-host and the extension)
+        run: npm --prefix app run installer
+
+      - name: Collect release files
+        shell: pwsh
+        run: |
+          npm --prefix extension run zip
+          $v = $env:TAG.TrimStart("v")
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item "target/release/bundle/nsis/Swoop_${v}_x64-setup.exe" release/Swoop-Setup-x64.exe
+          Copy-Item "extension/.output/swoop-extension-$v-chrome.zip" release/Swoop-Extension-Chrome-Edge-Opera.zip
+          Copy-Item "extension/.output/swoop-extension-$v-firefox.zip" release/Swoop-Extension-Firefox.zip
+          Get-ChildItem release -File | ForEach-Object {
+            "{0} *{1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content -Encoding ascii release/SHA256SUMS.txt
+          Get-Content release/SHA256SUMS.txt
+
+      - name: Publish release
+        shell: pwsh
+        run: |
+          $notes = "docs/release-notes/$env:TAG.md"
+          $files = Get-ChildItem release -File | ForEach-Object { $_.FullName }
+          if (Test-Path $notes) {
+            gh release create $env:TAG @files --title "Swoop $($env:TAG.TrimStart('v'))" --notes-file $notes --latest
+          } else {
+            gh release create $env:TAG @files --title "Swoop $($env:TAG.TrimStart('v'))" --generate-notes --latest
+          }

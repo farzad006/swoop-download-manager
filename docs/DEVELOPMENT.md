@@ -50,9 +50,13 @@ The script drives a throwaway browser profile. `SWOOP_DATA_DIR` keeps test runs 
 
 ## Releasing
 
-1. Bump the version in `app/src-tauri/tauri.conf.json`, `app/src-tauri/Cargo.toml`, `app/package.json`, `extension/package.json`, `extension/wxt.config.ts`.
-2. `npm --prefix app run installer` builds `target/release/bundle/nsis/Swoop_<version>_x64-setup.exe` (it also builds swoop-host and the extension).
-3. Create a GitHub release `v<version>` and upload the installer **as `Swoop-Setup-x64.exe`**, so the README's download button (`releases/latest/download/Swoop-Setup-x64.exe`) always gets the newest one. Also attach the extension zips from `npm --prefix extension run zip`.
+Releases are built by GitHub Actions ([.github/workflows/release.yml](../.github/workflows/release.yml)), not on a developer's PC:
+
+1. Bump the version in `app/src-tauri/tauri.conf.json`, `app/src-tauri/Cargo.toml`, `app/package.json`, `extension/package.json` and `extension/wxt.config.ts`.
+2. Optionally write release notes in `docs/release-notes/v<version>.md` (otherwise GitHub generates them).
+3. Commit, push, then tag: `git tag v<version> && git push origin v<version>`.
+
+The workflow checks the tag matches the app version, runs the tests, builds the installer and the extension zips, and publishes the release with `SHA256SUMS.txt`. The installer is always uploaded as **`Swoop-Setup-x64.exe`**, so the README's download button (`releases/latest/download/Swoop-Setup-x64.exe`) serves the newest version.
 
 ## Notes
 

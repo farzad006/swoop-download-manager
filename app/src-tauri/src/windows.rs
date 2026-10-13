@@ -1,5 +1,7 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
+/// Call only from async commands or spawned tasks: on Windows, building a
+/// webview window from a synchronous command or event handler deadlocks.
 fn open(app: &AppHandle, label: &str, route: &str, title: &str, size: (f64, f64), on_top: bool) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.unminimize();

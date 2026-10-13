@@ -475,8 +475,10 @@ pub fn reveal_extension(app: AppHandle, id: String) -> Res<()> {
     browsers::reveal(&target).map_err(err)
 }
 
+/// Must stay `async`: creating a window from a synchronous command deadlocks
+/// WebView2 on Windows, leaving an empty white window.
 #[tauri::command]
-pub fn open_browser_setup_window(app: AppHandle, selected: Vec<String>) -> Res<()> {
+pub async fn open_browser_setup_window(app: AppHandle, selected: Vec<String>) -> Res<()> {
     crate::windows::open_browsers(&app, &selected).map_err(err)
 }
 
