@@ -11,9 +11,8 @@ After editing either SVG, regenerate everything:
 ```bash
 node app/scripts/render-logo.mjs                                  # PNGs + extension icons
 npx --prefix app tauri icon branding/png/logo-1024.png            # app icons (then delete icons/android, icons/ios)
+python tools/scripts/make_ico.py                                  # icon.ico with the bold 16-32 px version
 python tools/scripts/make_installer_art.py app/src-tauri/installer  # installer sidebar/header
 ```
-
-`icon.ico` is assembled from the per-size PNGs (bold version at 16–32 px); see the snippet in the git history of this folder, or rerun the Pillow step from the commit that added the logo.
 
 The in-app copy lives in `app/src/components/Logo.tsx`; keep it in sync with the SVGs.
