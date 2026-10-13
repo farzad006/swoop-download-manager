@@ -38,7 +38,7 @@ Free and open source, by Ali Studio.
    - **Chrome** says *"uncommon download"*: click **Keep**.
    - **Windows** says *"Windows protected your PC"*: click **More info → Run anyway**.
 
-   Every installer is built publicly by [GitHub Actions](https://github.com/farzad006/swoop-download-manager/actions/workflows/release.yml) from this source code, and each release lists SHA-256 checksums so you can verify your download.
+   Every installer is built publicly by [GitHub Actions](https://github.com/farzad006/swoop-download-manager/actions/workflows/release.yml) from this source code, and each release lists SHA-256 checksums so you can verify your download. See the [code signing policy](CODE_SIGNING.md).
 3. Tick the browsers you use on the **Which browsers do you use?** page.
 4. Swoop opens with a short **welcome tour** that helps you choose a download folder and connect your browsers (about 20 seconds each).
 
@@ -124,6 +124,10 @@ npm --prefix app run installer          # release build + installer
 ```
 
 Architecture, tests and release notes for contributors are in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**. Bug reports and pull requests are welcome.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) (application in progress; current releases aren't signed yet). Who builds, reviews and approves releases, and what gets signed, is described in **[CODE_SIGNING.md](CODE_SIGNING.md)**. Privacy: **[PRIVACY.md](PRIVACY.md)**.
 
 ## Legal
 

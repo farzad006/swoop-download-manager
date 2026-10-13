@@ -61,9 +61,10 @@ jobs:
         shell: pwsh
         run: |
           $notes = "docs/release-notes/$env:TAG.md"
+          $body = if (Test-Path $notes) { Get-Content $notes -Raw } else { "Download **Swoop-Setup-x64.exe** below." }
+          # Every download page links the code signing policy (SignPath Foundation requirement).
+          $repo = "https://github.com/$env:GITHUB_REPOSITORY/blob/main"
+          $body += "`n`n---`n[Code signing policy]($repo/CODE_SIGNING.md) · [Privacy policy]($repo/PRIVACY.md) · Verify downloads with ``SHA256SUMS.txt```n"
+          Set-Content -Encoding utf8 release-notes.md $body
           $files = Get-ChildItem release -File | ForEach-Object { $_.FullName }
-          if (Test-Path $notes) {
-            gh release create $env:TAG @files --title "Swoop $($env:TAG.TrimStart('v'))" --notes-file $notes --latest
-          } else {
-            gh release create $env:TAG @files --title "Swoop $($env:TAG.TrimStart('v'))" --generate-notes --latest
-          }
+          gh release create $env:TAG @files --title "Swoop $($env:TAG.TrimStart('v'))" --notes-file release-notes.md --latest
