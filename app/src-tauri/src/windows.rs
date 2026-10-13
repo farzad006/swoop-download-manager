@@ -33,7 +33,7 @@ pub fn open_dialog(app: &AppHandle, route: &str, token: &str) -> tauri::Result<(
 
 /// "Connect your browsers" — `selected` are the ones ticked in the installer.
 pub fn open_browsers(app: &AppHandle, selected: &[String]) -> tauri::Result<()> {
-    open(app, "browsers", &format!("/browsers/{}", selected.join(",")), "Connect OurIDM to your browsers", (700.0, 640.0), false)
+    open(app, "browsers", &format!("/browsers/{}", selected.join(",")), "Connect Swoop to your browsers", (700.0, 640.0), false)
 }
 
 pub fn show_main(app: &AppHandle) {

@@ -124,7 +124,7 @@ export function SchedulerDialog({ queues, onChanged, onClose }: { queues: Queue[
                   ))}
                 </Select>
               </SettingRow>
-              <SettingRow title="Start automatically" description="OurIDM must be running (it can start with Windows).">
+              <SettingRow title="Start automatically" description="Swoop must be running (it can start with Windows).">
                 <div className="flex items-center gap-2">
                   {sched.startTime && <TextInput type="time" value={sched.startTime} onChange={(e) => setSched({ startTime: e.target.value })} aria-label="Start time" />}
                   <Switch label="Start automatically" checked={!!sched.startTime} onChange={(v) => setSched({ startTime: v ? "02:00" : null })} />
@@ -163,7 +163,7 @@ export function SchedulerDialog({ queues, onChanged, onClose }: { queues: Queue[
               <SettingRow title="When everything is downloaded">
                 <Select value={draft.afterDone} onChange={(e) => setDraft({ ...draft, afterDone: e.target.value as AfterQueue })} aria-label="When everything is downloaded">
                   <option value="nothing">Do nothing</option>
-                  <option value="exit">Close OurIDM</option>
+                  <option value="exit">Close Swoop</option>
                   <option value="sleep">Put the PC to sleep</option>
                   <option value="shutdown">Shut down the PC (1-minute warning)</option>
                 </Select>

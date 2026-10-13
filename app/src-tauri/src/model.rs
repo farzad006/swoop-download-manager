@@ -1,4 +1,4 @@
-use idm_engine::Status;
+use swoop_engine::Status;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +161,7 @@ pub struct ProgressEvent {
     pub speed: f64,
     pub eta_secs: Option<u64>,
     pub connections: usize,
-    pub segments: Vec<idm_engine::Segment>,
+    pub segments: Vec<swoop_engine::Segment>,
     pub file_name: Option<String>,
     pub phase: Option<String>,
     pub error: Option<String>,

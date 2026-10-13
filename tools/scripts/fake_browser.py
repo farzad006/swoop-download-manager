@@ -1,6 +1,6 @@
-"""Sends native-messaging frames to idm-host.exe the way a browser does.
+"""Sends native-messaging frames to swoop-host.exe the way a browser does.
 
-usage: python fake_browser.py <idm-host.exe> '<json message>' ['<json message>' ...]
+usage: python fake_browser.py <swoop-host.exe> '<json message>' ['<json message>' ...]
 """
 import json, struct, subprocess, sys
 

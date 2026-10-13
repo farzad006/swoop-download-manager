@@ -40,9 +40,9 @@ async function boot() {
     (await import("./dev/mockBackend")).installMockBackend();
   }
   // Reuse the root if hot reload runs this file again during development.
-  const w = window as unknown as { __ouridmRoot?: ReactDOM.Root };
-  w.__ouridmRoot ??= ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
-  w.__ouridmRoot.render(
+  const w = window as unknown as { __swoopRoot?: ReactDOM.Root };
+  w.__swoopRoot ??= ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+  w.__swoopRoot.render(
     <React.StrictMode>
       <ToastProvider>
         <Route />

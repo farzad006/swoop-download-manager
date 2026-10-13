@@ -76,10 +76,10 @@ pub async fn clipboard_monitor(mgr: Arc<Manager>) {
     }
 }
 
-pub const HOST_NAME: &str = "com.ouridm.host";
+pub const HOST_NAME: &str = "com.alistudio.swoop.host";
 /// Derived from the public key in extension/extension-key.json.
 pub const CHROME_EXTENSION_ID: &str = "fhnkijclhenhpkpllphcclallnnkkiib";
-pub const FIREFOX_EXTENSION_ID: &str = "ouridm@local";
+pub const FIREFOX_EXTENSION_ID: &str = "swoop@alistudio";
 
 const CHROMIUM_KEYS: &[&str] = &[
     r"Software\Google\Chrome\NativeMessagingHosts", // Chrome and Opera
@@ -92,7 +92,7 @@ const FIREFOX_KEY: &str = r"Software\Mozilla\NativeMessagingHosts";
 
 pub fn host_exe() -> Option<PathBuf> {
     let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    [dir.join("idm-host.exe"), dir.join("binaries").join("idm-host.exe")].into_iter().find(|p| p.is_file())
+    [dir.join("swoop-host.exe"), dir.join("binaries").join("swoop-host.exe")].into_iter().find(|p| p.is_file())
 }
 
 /// Writes the native-messaging manifests and points every supported browser
@@ -101,14 +101,14 @@ pub fn register_native_host(data_dir: &Path) -> anyhow::Result<PathBuf> {
     use winreg::RegKey;
     use winreg::enums::HKEY_CURRENT_USER;
 
-    let host = host_exe().ok_or_else(|| anyhow::anyhow!("idm-host.exe not found next to the app"))?;
+    let host = host_exe().ok_or_else(|| anyhow::anyhow!("swoop-host.exe not found next to the app"))?;
     let dir = data_dir.join("native-host");
     std::fs::create_dir_all(&dir)?;
     let chromium = dir.join(format!("{HOST_NAME}.json"));
     let firefox = dir.join(format!("{HOST_NAME}.firefox.json"));
     let base = serde_json::json!({
         "name": HOST_NAME,
-        "description": "OurIDM browser integration",
+        "description": "Swoop browser integration",
         "path": host,
         "type": "stdio",
     });

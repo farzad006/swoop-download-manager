@@ -1,6 +1,6 @@
 // End-to-end check of the extension in a Chromium browser with a throwaway profile.
 // BROWSER=edge (default) | opera | chrome — note Chrome 137+ ignores --load-extension.
-// Needs: OurIDM running (native host registered), test server on 127.0.0.1:8899,
+// Needs: Swoop running (native host registered), test server on 127.0.0.1:8899,
 // `npm run build:chrome` done. Run: node e2e/chromium.e2e.mjs
 import { chromium } from "playwright-core";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 
 const EXT_ID = "fhnkijclhenhpkpllphcclallnnkkiib";
 const ext = resolve("./.output/chrome-mv3");
-const profile = mkdtempSync(join(tmpdir(), "ouridm-edge-"));
+const profile = mkdtempSync(join(tmpdir(), "swoop-edge-"));
 const BASE = "http://127.0.0.1:8899";
 // Downloads the browser keeps go to the throwaway profile, not the user's folder.
 const browserDownloads = join(profile, "downloads");
@@ -70,15 +70,15 @@ try {
   if (!sw) throw new Error("extension did not load");
   sw.on("console", (m) => process.env.DEBUG && console.log("  [sw]", m.type(), m.text()));
 
-  const ping = await sw.evaluate(() => chrome.runtime.sendNativeMessage("com.ouridm.host", { type: "ping" }));
+  const ping = await sw.evaluate(() => chrome.runtime.sendNativeMessage("com.alistudio.swoop.host", { type: "ping" }));
   check("native host reachable from the browser", ping?.ok === true, JSON.stringify(ping));
 
-  // On install the extension says hello; OurIDM stores it for its setup window.
+  // On install the extension says hello; Swoop stores it for its setup window.
   const want = process.env.BROWSER ?? "edge";
   let seenAt;
   for (let i = 0; i < 20 && !seenAt; i++) {
-    const dataDir = process.env.OURIDM_DATA_DIR ?? join(process.env.APPDATA ?? "", "com.ouridm.app");
-    const db = new DatabaseSync(join(dataDir, "ouridm.db"), { readOnly: true });
+    const dataDir = process.env.SWOOP_DATA_DIR ?? join(process.env.APPDATA ?? "", "com.alistudio.swoop");
+    const db = new DatabaseSync(join(dataDir, "swoop.db"), { readOnly: true });
     const row = db.prepare("SELECT value FROM settings WHERE key = 'settings'").get();
     db.close();
     seenAt = row ? JSON.parse(row.value).connectedBrowsers?.[want] : undefined;
@@ -87,7 +87,7 @@ try {
       await sleep(250);
     }
   }
-  check(`OurIDM recorded the extension as connected in ${want}`, !!seenAt, seenAt ? new Date(seenAt * 1000).toLocaleTimeString() : "not recorded");
+  check(`Swoop recorded the extension as connected in ${want}`, !!seenAt, seenAt ? new Date(seenAt * 1000).toLocaleTimeString() : "not recorded");
 
   const page = await ctx.newPage();
   await page.goto(`${BASE}/page`);
@@ -106,21 +106,21 @@ try {
   await page.hover("#v");
   await sleep(300);
   const panelShown = await page.evaluate(() => {
-    const host = document.querySelector("ouridm-panel");
+    const host = document.querySelector("swoop-panel");
     return !!host && getComputedStyle(host).display !== "none";
   });
   check("'Download this video' button appears on hover", panelShown);
   if (!panelShown)
     console.log("  geometry:", JSON.stringify(await page.evaluate(() => {
       const r = document.getElementById("v").getBoundingClientRect();
-      return { iw: innerWidth, ih: innerHeight, video: [r.width, r.height, r.top], host: !!document.querySelector("ouridm-panel") };
+      return { iw: innerWidth, ih: innerHeight, video: [r.width, r.height, r.top], host: !!document.querySelector("swoop-panel") };
     })));
 
-  // Captured download: browser cancels, OurIDM gets it.
+  // Captured download: browser cancels, Swoop gets it.
   await page.click("#zip");
   await sleep(4000);
   const leftInBrowser = await sw.evaluate(() => chrome.downloads.search({ query: ["from-browser"] }));
-  check("browser download handed to OurIDM and removed from the browser", leftInBrowser.length === 0, `${leftInBrowser.length} left`);
+  check("browser download handed to Swoop and removed from the browser", leftInBrowser.length === 0, `${leftInBrowser.length} left`);
   if (leftInBrowser.length) console.log("  leftover:", JSON.stringify(leftInBrowser.map(({ state, error, filename, byExtensionId }) => ({ state, error, filename, byExtensionId }))));
 
   // Non-matching type stays in the browser.

@@ -1,7 +1,7 @@
 import { browser } from "wxt/browser";
 import { DEFAULT_CONFIG, type AppConfig } from "./rules";
 
-export const HOST = "com.ouridm.host";
+export const HOST = "com.alistudio.swoop.host";
 
 export interface NativeReply {
   ok: boolean;

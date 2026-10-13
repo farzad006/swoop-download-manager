@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OurIDM",
-  "mainBinaryName": "OurIDM",
-  "version": "0.3.0",
-  "identifier": "com.ouridm.app",
+  "productName": "Swoop",
+  "mainBinaryName": "Swoop",
+  "version": "0.4.0",
+  "identifier": "com.alistudio.swoop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "OurIDM",
+        "title": "Swoop",
         "width": 1180,
         "height": 720,
         "minWidth": 900,

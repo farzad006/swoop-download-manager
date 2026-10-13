@@ -26,7 +26,7 @@ pub fn find_binary(name: &str) -> Option<PathBuf> {
 }
 
 fn ytdlp() -> Result<PathBuf, String> {
-    find_binary("yt-dlp").ok_or_else(|| "yt-dlp was not found. Put yt-dlp.exe next to OurIDM or on PATH.".into())
+    find_binary("yt-dlp").ok_or_else(|| "yt-dlp was not found. Put yt-dlp.exe next to Swoop or on PATH.".into())
 }
 
 fn command(exe: &Path) -> Command {
@@ -401,7 +401,7 @@ mod tests {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
     }
 
-    /// Network + yt-dlp + ffmpeg. `cargo test -p ouridm -- --ignored public_hls`
+    /// Network + yt-dlp + ffmpeg. `cargo test -p swoop -- --ignored public_hls`
     #[tokio::test]
     #[ignore]
     async fn downloads_public_hls_stream() {

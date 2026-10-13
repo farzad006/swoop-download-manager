@@ -510,7 +510,7 @@ function Header({
     <header className="flex items-center gap-4 px-4 h-[62px] shrink-0">
       <div className="flex items-center gap-2.5 w-[200px] shrink-0 pl-1">
         <Logo size={34} className="drop-shadow-sm" />
-        <span className="text-[16px] font-semibold font-[family-name:var(--font-display)]">OurIDM</span>
+        <span className="text-[16px] font-semibold font-[family-name:var(--font-display)]">Swoop</span>
       </div>
       <form
         className="flex-1 max-w-[720px] flex items-center gap-2 h-10 pl-3 pr-1 rounded-xl border border-line-strong bg-surface shadow-[var(--shadow-card)] focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15 transition-shadow"
@@ -773,12 +773,12 @@ function WelcomeEmpty({ connected }: { connected: boolean }) {
           title="Download from your browser"
           text={
             connected
-              ? "Click any download link, or use the “Download this video” button on web videos. OurIDM takes it from there."
-              : "Connect your browser once, and downloads and web videos open in OurIDM automatically."
+              ? "Click any download link, or use the “Download this video” button on web videos. Swoop takes it from there."
+              : "Connect your browser once, and downloads and web videos open in Swoop automatically."
           }
           action={!connected ? <Button size="sm" variant="primary" icon={Puzzle} onClick={() => api.openBrowserSetupWindow()}>Connect browser</Button> : undefined}
         />
-        <Tip n={3} title="Copy a link anywhere" text="When you copy a link to a file, OurIDM offers to download it." />
+        <Tip n={3} title="Copy a link anywhere" text="When you copy a link to a file, Swoop offers to download it." />
       </div>
     </div>
   );
@@ -822,7 +822,7 @@ function DeleteDialog({ items, onClose, onError }: { items: Download[]; onClose:
       }
     >
       <p className="text-muted mb-3">
-        {items.length === 1 ? <b className="text-fg">{items[0]!.fileName}</b> : `${items.length} items`} will be removed from OurIDM.
+        {items.length === 1 ? <b className="text-fg">{items[0]!.fileName}</b> : `${items.length} items`} will be removed from Swoop.
         {unfinished > 0 && " Unfinished parts are cleaned up."}
       </p>
       <Check checked={withFile} onChange={setWithFile} label="Also delete the downloaded file from my computer" />

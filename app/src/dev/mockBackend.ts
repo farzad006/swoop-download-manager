@@ -63,7 +63,7 @@ const queues: Queue[] = [
   { id: 1, name: "Main download queue", maxConcurrent: 2, schedule: { startTime: "02:00", stopTime: "07:00", days: [1, 2, 3, 4, 5] }, afterDone: "nothing", running: false },
 ];
 
-const ext = "C:\\Users\\you\\AppData\\Local\\OurIDM\\extension";
+const ext = "C:\\Users\\you\\AppData\\Local\\Swoop\\extension";
 const browsers = [
   { id: "chrome", name: "Google Chrome", exe: "chrome.exe", engine: "chromium", connectedAt: null, extensionPath: `${ext}\\chrome-mv3`, signedXpi: false },
   { id: "edge", name: "Microsoft Edge", exe: "msedge.exe", engine: "chromium", connectedAt: now - 60, extensionPath: `${ext}\\chrome-mv3`, signedXpi: false },
@@ -102,7 +102,7 @@ export function installMockBackend() {
         case "list_queues":
           return queues;
         case "tool_status":
-          return { ytdlp: "C:\\Tools\\yt-dlp.exe", ffmpeg: "C:\\Tools\\ffmpeg.exe", nativeHost: "C:\\Program Files\\OurIDM\\idm-host.exe", extensionDir: "C:\\Users\\you\\AppData\\Local\\OurIDM\\extension", chromeExtensionId: "fhnkijclhenhpkpllphcclallnnkkiib", firefoxExtensionId: "ouridm@local", version: "0.1.0" };
+          return { ytdlp: "C:\\Tools\\yt-dlp.exe", ffmpeg: "C:\\Tools\\ffmpeg.exe", nativeHost: "C:\\Program Files\\Swoop\\swoop-host.exe", extensionDir: "C:\\Users\\you\\AppData\\Local\\Swoop\\extension", chromeExtensionId: "fhnkijclhenhpkpllphcclallnnkkiib", firefoxExtensionId: "swoop@alistudio", version: "0.1.0" };
         case "placement_for": {
           const ext = String(args.fileName).split(".").pop()?.toLowerCase();
           const category = ext === "mp4" ? "Video" : ext === "mp3" ? "Music" : ext === "zip" ? "Compressed" : "General";

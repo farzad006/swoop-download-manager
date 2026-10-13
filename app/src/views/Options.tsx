@@ -75,7 +75,7 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
         <div className="flex-1 overflow-auto px-6 py-2 divide-y divide-line">
           {tab === "general" && (
             <>
-              <SettingRow title="Start OurIDM with Windows" description="Runs quietly in the system tray so browser downloads always have somewhere to go.">
+              <SettingRow title="Start Swoop with Windows" description="Runs quietly in the system tray so browser downloads always have somewhere to go.">
                 <Switch label="Start with Windows" checked={s.startWithWindows} onChange={(v) => set("startWithWindows", v)} />
               </SettingRow>
               <SettingRow title="Ask before downloading" description="Shows the file name and folder first. Turn off to start browser downloads straight away.">
@@ -87,7 +87,7 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
               <SettingRow title="Tell me when a download finishes" description="Turns the progress window into a “Download complete” window with Open and Show in folder buttons.">
                 <Switch label="Download complete window" checked={s.showCompleteDialog} onChange={(v) => set("showCompleteDialog", v)} />
               </SettingRow>
-              <SettingRow title="Notice copied links" description="When you copy a link to a file, OurIDM offers to download it.">
+              <SettingRow title="Notice copied links" description="When you copy a link to a file, Swoop offers to download it.">
                 <Switch label="Watch clipboard" checked={s.clipboardMonitor} onChange={(v) => set("clipboardMonitor", v)} />
               </SettingRow>
               <SettingRow title="Welcome tour" description="See the first-run introduction again.">
@@ -125,7 +125,7 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
 
           {tab === "browsers" && (
             <div className="py-4 space-y-4">
-              <p className="text-muted">The OurIDM extension sends downloads and web videos from your browser to OurIDM.</p>
+              <p className="text-muted">The Swoop extension sends downloads and web videos from your browser to Swoop.</p>
               <div className="border border-line rounded-xl divide-y divide-line">
                 {(browsers ?? []).map((b) => (
                   <div key={b.id} className="flex items-center gap-3 h-11 px-3.5">
@@ -176,7 +176,7 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
               <SettingRow title="Prefer MP4" description="Plays on every device and TV. Turn off to allow WebM/MKV, which some sites use for top quality.">
                 <Switch label="Prefer MP4" checked={s.preferMp4} onChange={(v) => set("preferMp4", v)} />
               </SettingRow>
-              <SettingRow title="Keep the video downloader up to date" description="Websites change often; OurIDM checks for a new yt-dlp once a day.">
+              <SettingRow title="Keep the video downloader up to date" description="Websites change often; Swoop checks for a new yt-dlp once a day.">
                 <Switch label="Update yt-dlp" checked={s.updateYtdlp} onChange={(v) => set("updateYtdlp", v)} />
               </SettingRow>
               <div className="py-4 space-y-2">
@@ -228,7 +228,7 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
                 <TextInput type="number" min={0} max={100} className="w-24" value={s.maxRetries} onChange={(e) => set("maxRetries", Number(e.target.value))} aria-label="Retries" />
               </SettingRow>
               <div className="py-4 text-[12px] text-faint space-y-0.5">
-                <div>OurIDM {tools?.version}</div>
+                <div>Swoop {tools?.version} · made by Ali Studio</div>
                 <div>Extension ID (Chrome, Edge, Opera, Brave): <code className="select-all">{tools?.chromeExtensionId}</code></div>
                 <div>Extension ID (Firefox): <code>{tools?.firefoxExtensionId}</code></div>
                 <div>Extension files: <code className="select-all">{tools?.extensionDir ?? "not found"}</code></div>

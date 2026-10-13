@@ -24,7 +24,7 @@ async function init() {
     status.textContent = `Connected · v${state.ping.version}`;
     status.className = "status ok";
   } else {
-    status.textContent = "OurIDM not reachable";
+    status.textContent = "Swoop not reachable";
     status.className = "status bad";
     status.title = state.ping?.error ?? "";
   }

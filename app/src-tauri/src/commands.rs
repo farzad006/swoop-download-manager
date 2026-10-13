@@ -63,7 +63,7 @@ pub fn delete_download(mgr: Mgr, id: i64, delete_file: bool) -> Res<()> {
 #[tauri::command]
 pub fn delete_completed(mgr: Mgr) -> Res<()> {
     for d in mgr.list().map_err(err)? {
-        if d.status == idm_engine::Status::Completed {
+        if d.status == swoop_engine::Status::Completed {
             mgr.delete(d.id, false).map_err(err)?;
         }
     }
@@ -186,8 +186,8 @@ pub fn set_download_queue(mgr: Mgr, id: i64, queue_id: Option<i64>) -> Res<()> {
     let db = mgr.db();
     db.set_queue(id, queue_id).map_err(err)?;
     if let (Some(_), Ok(Some(d))) = (queue_id, db.get(id)) {
-        if matches!(d.status, idm_engine::Status::Paused | idm_engine::Status::Failed) {
-            db.set_status(id, idm_engine::Status::Queued, None).map_err(err)?;
+        if matches!(d.status, swoop_engine::Status::Paused | swoop_engine::Status::Failed) {
+            db.set_status(id, swoop_engine::Status::Queued, None).map_err(err)?;
         }
     }
     Ok(())
@@ -291,7 +291,7 @@ pub fn add_video(
         NewDownload {
             url: source_url,
             page_url: Some(cap.page_url.clone()),
-            file_name: idm_engine::sanitize_file_name(&file_name),
+            file_name: swoop_engine::sanitize_file_name(&file_name),
             dest_dir,
             category: category.into(),
             size: None,
@@ -316,7 +316,7 @@ pub fn add_stream_direct(mgr: Mgr, token: String, url: String, file_name: String
     if let Some(c) = capture::cookie_header_for(&url, &cap.cookies) {
         headers.push(("Cookie".into(), c));
     }
-    let file_name = idm_engine::sanitize_file_name(&file_name);
+    let file_name = swoop_engine::sanitize_file_name(&file_name);
     let (category, _) = mgr.placement_for(&file_name);
     mgr.add(
         NewDownload {
@@ -418,7 +418,7 @@ pub struct BrowserStatus {
 }
 
 fn signed_xpi(app: &AppHandle) -> Option<PathBuf> {
-    extension_dir(app).map(|d| d.join("ouridm-firefox.xpi")).filter(|p| p.is_file())
+    extension_dir(app).map(|d| d.join("swoop-firefox.xpi")).filter(|p| p.is_file())
 }
 
 #[tauri::command]

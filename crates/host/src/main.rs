@@ -1,8 +1,8 @@
-//! Native-messaging host for the OurIDM browser extension.
+//! Native-messaging host for the Swoop browser extension.
 //!
 //! Browsers start this process and talk to it over stdio (4-byte native-endian
-//! length + JSON). Each message is relayed as one line to the OurIDM app over
-//! the `\\.\pipe\ouridm` named pipe, and the app's one-line reply goes back.
+//! length + JSON). Each message is relayed as one line to the Swoop app over
+//! the `\\.\pipe\swoop` named pipe, and the app's one-line reply goes back.
 //! The app is launched in the background if it isn't running.
 
 use std::fs::{File, OpenOptions};
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-const PIPE: &str = r"\\.\pipe\ouridm";
+const PIPE: &str = r"\\.\pipe\swoop";
 const MAX_MESSAGE: u32 = 64 * 1024 * 1024;
 
 fn read_message(r: &mut impl Read) -> io::Result<Option<Vec<u8>>> {
@@ -65,14 +65,14 @@ fn connect_or_launch(launch: bool) -> io::Result<File> {
 fn app_exe() -> Option<PathBuf> {
     let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     let dirs = [dir.clone(), dir.parent().map(PathBuf::from).unwrap_or(dir)];
-    dirs.iter().flat_map(|d| [d.join("OurIDM.exe"), d.join("ouridm.exe")]).find(|p| p.is_file())
+    dirs.iter().flat_map(|d| [d.join("Swoop.exe"), d.join("swoop.exe")]).find(|p| p.is_file())
 }
 
 fn launch_app() -> io::Result<()> {
     const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-    let exe = app_exe().ok_or_else(|| io::Error::other("OurIDM.exe not found next to idm-host.exe"))?;
+    let exe = app_exe().ok_or_else(|| io::Error::other("Swoop.exe not found next to swoop-host.exe"))?;
     // Browsers run hosts inside a job object; break away so the app outlives us.
     let base = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     Command::new(&exe)
@@ -84,12 +84,12 @@ fn launch_app() -> io::Result<()> {
 }
 
 fn relay(msg: &Value) -> Value {
-    // Only real capture requests start OurIDM; status and config queries
+    // Only real capture requests start Swoop; status and config queries
     // (sent whenever a browser starts) just report "not running".
     let launch = matches!(msg["type"].as_str(), Some("download" | "video" | "links"));
     let pipe = match connect_or_launch(launch) {
         Ok(p) => p,
-        Err(e) => return json!({ "ok": false, "error": format!("OurIDM is not running ({e})") }),
+        Err(e) => return json!({ "ok": false, "error": format!("Swoop is not running ({e})") }),
     };
     let mut w = match pipe.try_clone() {
         Ok(w) => w,
@@ -102,7 +102,7 @@ fn relay(msg: &Value) -> Value {
     let mut reply = String::new();
     match BufReader::new(pipe).read_line(&mut reply) {
         Ok(n) if n > 0 => serde_json::from_str(&reply).unwrap_or_else(|e| json!({ "ok": false, "error": e.to_string() })),
-        Ok(_) => json!({ "ok": false, "error": "OurIDM closed the connection" }),
+        Ok(_) => json!({ "ok": false, "error": "Swoop closed the connection" }),
         Err(e) => json!({ "ok": false, "error": e.to_string() }),
     }
 }

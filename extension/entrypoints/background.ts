@@ -73,7 +73,7 @@ export default defineBackground(() => {
     return captureEnabled as boolean;
   }
 
-  /** Decides on one browser download; returns true if OurIDM took it. */
+  /** Decides on one browser download; returns true if Swoop took it. */
   async function maybeTakeOver(item: Browser.downloads.DownloadItem): Promise<boolean> {
     if (handedOff.has(item.id) || Date.now() < bypassUntil || !(await captureEnabled())) return false;
     const url = item.finalUrl || item.url;
@@ -94,8 +94,8 @@ export default defineBackground(() => {
       mime: item.mime || null,
     });
     if (!reply.ok) {
-      // OurIDM isn't installed or didn't answer: give the download back to the browser.
-      console.warn("OurIDM unavailable, browser keeps the download:", reply.error);
+      // Swoop isn't installed or didn't answer: give the download back to the browser.
+      console.warn("Swoop unavailable, browser keeps the download:", reply.error);
       bypassUntil = Date.now() + 5000;
       await browser.downloads.download({ url }).catch(() => {});
       return false;
@@ -171,9 +171,9 @@ export default defineBackground(() => {
   // ---- context menus ----
   browser.runtime.onInstalled.addListener(() => {
     browser.contextMenus.removeAll().then(() => {
-      browser.contextMenus.create({ id: "dl-link", title: "Download with OurIDM", contexts: ["link", "image", "video", "audio"] });
-      browser.contextMenus.create({ id: "dl-all", title: "Download all links with OurIDM", contexts: ["page", "selection"] });
-      browser.contextMenus.create({ id: "dl-video", title: "Download video from this page with OurIDM", contexts: ["page", "video"] });
+      browser.contextMenus.create({ id: "dl-link", title: "Download with Swoop", contexts: ["link", "image", "video", "audio"] });
+      browser.contextMenus.create({ id: "dl-all", title: "Download all links with Swoop", contexts: ["page", "selection"] });
+      browser.contextMenus.create({ id: "dl-video", title: "Download video from this page with Swoop", contexts: ["page", "video"] });
     });
   });
 
@@ -204,7 +204,7 @@ export default defineBackground(() => {
     }
   });
 
-  // Tell OurIDM which browser we are (its setup window ticks it off), once per
+  // Tell Swoop which browser we are (its setup window ticks it off), once per
   // browser session: MV3 workers restart often and each native call spawns a process.
   async function hello(force = false) {
     if (!force && (await sessionStore.get("helloSent")).helloSent) return;

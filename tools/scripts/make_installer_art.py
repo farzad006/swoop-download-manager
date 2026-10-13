@@ -56,8 +56,9 @@ for r, a in ((120, 18), (80, 14)):  # soft glow circles
     side.paste((96, 165, 250), (0, 0), glow)
 tile = logo(56)
 side.paste(tile, (24, 40), tile)
-d.text((24, 112), "OurIDM", font=font("segoeuib.ttf", 22), fill=(255, 255, 255))
-d.text((24, 142), "Fast, resumable\ndownloads and\nweb videos.", font=font("segoeui.ttf", 12), fill=(191, 219, 254), spacing=3)
+d.text((24, 110), "Swoop", font=font("segoeuib.ttf", 26), fill=(255, 255, 255))
+d.text((24, 146), "Fast, resumable\ndownloads and\nweb videos.", font=font("segoeui.ttf", 12), fill=(191, 219, 254), spacing=3)
+d.text((24, H - 34), "by Ali Studio", font=font("segoeuisb.ttf", 11), fill=(165, 180, 252))
 side.save(out / "sidebar.bmp")
 
 # Header: white, logo at the right.

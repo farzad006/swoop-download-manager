@@ -1,6 +1,6 @@
 """Builds app/src-tauri/installer/installer.nsi from Tauri's stock NSIS template.
 
-The only change is OurIDM's "Browser integration" page (installer/browser-page.nsi),
+The only change is Swoop's "Browser integration" page (installer/browser-page.nsi),
 inserted right before the installation page. After upgrading the Tauri CLI, fetch
 the matching template and rerun:
 

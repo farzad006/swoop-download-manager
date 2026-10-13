@@ -110,7 +110,7 @@ pub fn reveal(path: &Path) -> std::io::Result<()> {
 pub fn take_installer_selection() -> Vec<String> {
     use winreg::RegKey;
     use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS};
-    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(r"Software\OurIDM", KEY_ALL_ACCESS) else {
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(r"Software\Swoop", KEY_ALL_ACCESS) else {
         return vec![];
     };
     let value: String = key.get_value("SetupBrowsers").unwrap_or_default();

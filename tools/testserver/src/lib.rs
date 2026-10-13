@@ -144,8 +144,8 @@ async fn serve(
 /// A page with a download link and a video, for browser-extension tests.
 async fn page() -> axum::response::Html<&'static str> {
     axum::response::Html(
-        r#"<!doctype html><html><head><title>OurIDM test page</title></head><body>
-<h1>OurIDM test page</h1>
+        r#"<!doctype html><html><head><title>Swoop test page</title></head><body>
+<h1>Swoop test page</h1>
 <p><a id="zip" href="/file/3000000?name=from-browser.zip">Download from-browser.zip</a></p>
 <p><a id="html" href="/file/2000?name=notes.html&type=text/html">A link the browser keeps</a></p>
 <video id="v" width="640" height="360" muted preload="auto" src="/file/4000000?name=clip.mp4&type=video/mp4"></video>

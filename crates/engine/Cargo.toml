@@ -1,5 +1,5 @@
 [package]
-name = "idm-engine"
+name = "swoop-engine"
 version = "0.1.0"
 edition.workspace = true
 
@@ -14,6 +14,6 @@ tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "sync", "
 tokio-util = "0.7.20"
 
 [dev-dependencies]
-idm-testserver = { path = "../../tools/testserver" }
+swoop-testserver = { path = "../../tools/testserver" }
 sha2 = "0.11.1"
 tempfile = "3.27.0"

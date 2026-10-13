@@ -60,7 +60,7 @@ export function BrowserList({ selected, onCount }: { selected: string[]; onCount
   );
 }
 
-/** "Connect OurIDM to your browsers" window (installer follow-up, Settings). */
+/** "Connect Swoop to your browsers" window (installer follow-up, Settings). */
 export default function Browsers({ selected }: { selected: string[] }) {
   const [count, setCount] = useState<[number, number]>([0, 0]);
   const win = getCurrentWindow();
@@ -73,7 +73,7 @@ export default function Browsers({ selected }: { selected: string[] }) {
             <Puzzle size={20} />
           </span>
           <div>
-            <div className="text-[17px] font-semibold font-[family-name:var(--font-display)]">Connect OurIDM to your browsers</div>
+            <div className="text-[17px] font-semibold font-[family-name:var(--font-display)]">Connect Swoop to your browsers</div>
             <div className="text-muted text-[12.5px]">A one-time step of about 20 seconds per browser.</div>
           </div>
         </div>
@@ -82,7 +82,7 @@ export default function Browsers({ selected }: { selected: string[] }) {
         <BrowserList selected={selected} onCount={(a, b) => setCount([a, b])} />
         <p className="text-[12px] text-faint mt-4 leading-relaxed">
           Why isn't this automatic? Browsers only let their own add-on stores install extensions without your help, which keeps
-          unwanted extensions out. A browser turns green here as soon as OurIDM works in it.
+          unwanted extensions out. A browser turns green here as soon as Swoop works in it.
         </p>
       </div>
       <div className="px-6 py-3 border-t border-line bg-surface flex items-center">
@@ -216,7 +216,7 @@ function Step({ n, children }: { n: number; children: React.ReactNode }) {
 }
 
 function PathRow({ path, copied, onCopy }: { path: string | null; copied: boolean; onCopy: () => void }) {
-  if (!path) return <div className="text-danger">The extension files weren't found next to OurIDM.</div>;
+  if (!path) return <div className="text-danger">The extension files weren't found next to Swoop.</div>;
   return (
     <div className="flex items-center gap-1.5">
       <code className="flex-1 min-w-0 truncate select-all px-2.5 h-8 leading-8 rounded-lg border border-line bg-surface-2 text-[12px]" title={path}>

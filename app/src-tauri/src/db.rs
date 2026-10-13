@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use idm_engine::Status;
+use swoop_engine::Status;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::model::{AfterQueue, DownloadRecord, MAIN_QUEUE, NewDownload, Queue, Settings};

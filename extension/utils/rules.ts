@@ -128,7 +128,7 @@ export function isOpaqueVideoHost(url: string): boolean {
   }
 }
 
-/** Which browser this is, so OurIDM's setup window can tick it off. */
+/** Which browser this is, so Swoop's setup window can tick it off. */
 export function detectBrowser(ua: string, brands: string[] = [], isBrave = false): string {
   if (/Firefox\//.test(ua)) return "firefox";
   if (brands.some((b) => /Edge/i.test(b)) || /Edg\//.test(ua)) return "edge";

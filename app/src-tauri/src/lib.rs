@@ -22,7 +22,7 @@ use crate::manager::Manager;
 use crate::model::MAIN_QUEUE;
 
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open OurIDM", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Swoop", true, None::<&str>)?;
     let start_q = MenuItem::with_id(app, "start-queue", "Start main queue", true, None::<&str>)?;
     let stop_all = MenuItem::with_id(app, "stop-all", "Stop all downloads", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
@@ -30,7 +30,7 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&open, &start_q, &stop_all, &sep, &quit])?;
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().cloned().expect("app icon"))
-        .tooltip("OurIDM")
+        .tooltip("Swoop")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -66,6 +66,25 @@ pub fn quit_gracefully(app: AppHandle, mgr: Arc<Manager>) {
     });
 }
 
+/// Swoop used to be called OurIDM (data in `com.ouridm.app`). On first start,
+/// bring its download list and settings along.
+fn migrate_from_ouridm(data_dir: &std::path::Path) {
+    let new_db = data_dir.join("swoop.db");
+    let Some(old_dir) = data_dir.parent().map(|p| p.join("com.ouridm.app")) else { return };
+    let old_db = old_dir.join("ouridm.db");
+    if new_db.exists() || !old_db.is_file() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(data_dir);
+    // SQLite in WAL mode keeps recent writes in the -wal file; copy it alongside.
+    for (from, to) in [("ouridm.db", "swoop.db"), ("ouridm.db-wal", "swoop.db-wal"), ("ouridm.db-shm", "swoop.db-shm")] {
+        let src = old_dir.join(from);
+        if src.is_file() {
+            let _ = std::fs::copy(src, data_dir.join(to));
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if std::env::args().any(|a| a == "--unregister") {
@@ -86,11 +105,12 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .setup(move |app| {
-            // OURIDM_DATA_DIR keeps test runs away from the real download list.
-            let data_dir = match std::env::var_os("OURIDM_DATA_DIR") {
+            // SWOOP_DATA_DIR keeps test runs away from the real download list.
+            let data_dir = match std::env::var_os("SWOOP_DATA_DIR") {
                 Some(d) => std::path::PathBuf::from(d),
                 None => app.path().app_data_dir()?,
             };
+            migrate_from_ouridm(&data_dir);
             let mgr = Manager::new(app.handle().clone(), data_dir.clone())?;
             app.manage(mgr.clone());
             if let Err(e) = background::register_native_host(&data_dir) {
@@ -126,7 +146,7 @@ pub fn run() {
         .on_window_event(|w, e| {
             if let WindowEvent::CloseRequested { api, .. } = e {
                 if w.label() == "main" {
-                    // Closing the main window keeps OurIDM running in the tray, like IDM.
+                    // Closing the main window keeps Swoop running in the tray, like IDM.
                     api.prevent_close();
                     let _ = w.hide();
                 }
@@ -171,7 +191,7 @@ pub fn run() {
             commands::clipboard_link,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building OurIDM");
+        .expect("error while building Swoop");
 
     app.run(|_app, event| {
         // Last window closed: stay in the tray. Explicit exit() carries a code.
@@ -179,4 +199,24 @@ pub fn run() {
             api.prevent_exit();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ouridm_data_is_carried_over_once() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("com.ouridm.app");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("ouridm.db"), b"old list").unwrap();
+        let new = root.path().join("com.alistudio.swoop");
+
+        super::migrate_from_ouridm(&new);
+        assert_eq!(std::fs::read(new.join("swoop.db")).unwrap(), b"old list");
+
+        // Later starts never overwrite Swoop's own data.
+        std::fs::write(new.join("swoop.db"), b"swoop list").unwrap();
+        super::migrate_from_ouridm(&new);
+        assert_eq!(std::fs::read(new.join("swoop.db")).unwrap(), b"swoop list");
+    }
 }

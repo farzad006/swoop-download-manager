@@ -158,7 +158,7 @@ export default function Video({ token }: { token: string }) {
           <div className={`flex gap-3 items-start p-4 rounded-xl ${drm ? "bg-danger-soft" : "bg-warn-soft"}`}>
             <ShieldAlert size={20} className={`${drm ? "text-danger" : "text-warn"} shrink-0`} />
             <div>
-              <div className="font-medium">{drm ? "This video is copy-protected" : "OurIDM couldn't read this video"}</div>
+              <div className="font-medium">{drm ? "This video is copy-protected" : "Swoop couldn't read this video"}</div>
               <div className="text-muted text-[12.5px] mt-0.5">{drm ? "Streaming services like Netflix and Disney+ lock their videos (DRM), so they can't be saved." : loadErr ?? res?.error ?? "No downloadable video was found on this page."}</div>
             </div>
           </div>

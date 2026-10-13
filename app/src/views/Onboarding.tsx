@@ -7,7 +7,7 @@ import { Logo } from "../components/Logo";
 
 const STEPS = ["Welcome", "Folder", "Browsers", "Ready"];
 
-/** First-run tour: what OurIDM does, where files go, connecting browsers, tips. */
+/** First-run tour: what Swoop does, where files go, connecting browsers, tips. */
 export default function Onboarding({ onDone }: { onDone: () => void }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
@@ -52,7 +52,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           {step === 0 && (
             <div className="p-8 text-center">
               <Logo size={84} className="mx-auto mb-5 drop-shadow-lg" />
-              <h1 className="text-[24px] font-semibold font-[family-name:var(--font-display)]">Welcome to OurIDM</h1>
+              <h1 className="text-[24px] font-semibold font-[family-name:var(--font-display)]">Welcome to Swoop</h1>
               <p className="text-muted mt-1.5 text-[14px]">Faster, safer downloads, plus videos from websites. Setup takes about a minute.</p>
               <div className="grid grid-cols-3 gap-3 mt-7 text-left">
                 <Feature icon={Gauge} title="Faster downloads" text="Uses several connections at once to speed things up." />
@@ -85,7 +85,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
           {step === 2 && (
             <div className="p-8">
-              <StepHead icon={Puzzle} title="Connect your browsers" text="Then clicking a download or a web video sends it straight to OurIDM. About 20 seconds per browser." />
+              <StepHead icon={Puzzle} title="Connect your browsers" text="Then clicking a download or a web video sends it straight to Swoop. About 20 seconds per browser." />
               <div className="mt-5 max-h-[340px] overflow-auto -mx-1 px-1">
                 <BrowserList selected={selection} onCount={(c) => setConnected(c)} />
               </div>
@@ -98,7 +98,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               <StepHead icon={Sparkles} title="You're all set!" text="Here's how to download things:" />
               <div className="mt-6 space-y-2.5">
                 <HowTo icon={Clipboard} title="Paste a link" text={<>Paste into the box at the top, or press <Kbd>Ctrl</Kbd> + <Kbd>V</Kbd> in the window.</>} />
-                <HowTo icon={MousePointerClick} title="Click downloads in your browser" text={<>OurIDM takes them over. Hold <Kbd>Alt</Kbd> while clicking to keep one in the browser.</>} />
+                <HowTo icon={MousePointerClick} title="Click downloads in your browser" text={<>Swoop takes them over. Hold <Kbd>Alt</Kbd> while clicking to keep one in the browser.</>} />
                 <HowTo icon={Video} title="Download web videos" text="Use the blue “Download this video” button that appears on videos." />
               </div>
             </div>
@@ -117,7 +117,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </Button>
               ) : (
                 <Button variant="primary" size="lg" onClick={finish}>
-                  Start using OurIDM
+                  Start using Swoop
                 </Button>
               )}
             </div>

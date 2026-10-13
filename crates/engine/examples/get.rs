@@ -1,4 +1,4 @@
-//! `cargo run -p idm-engine --release --example get -- <url> [dest_dir] [connections]`
+//! `cargo run -p swoop-engine --release --example get -- <url> [dest_dir] [connections]`
 //! Ctrl+C pauses; run the same command again to resume.
 
 use std::path::PathBuf;
@@ -20,9 +20,9 @@ async fn main() {
         })
     });
 
-    let opts = idm_engine::Options { connections, ..Default::default() };
-    let req = idm_engine::Request { url, headers: vec![], dest_dir, file_name };
-    let handle = idm_engine::start(req, opts);
+    let opts = swoop_engine::Options { connections, ..Default::default() };
+    let req = swoop_engine::Request { url, headers: vec![], dest_dir, file_name };
+    let handle = swoop_engine::start(req, opts);
     let cancel = handle.cancel_token();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();

@@ -117,12 +117,12 @@ pub enum Pending {
 
 pub async fn handle_browser(mgr: &Arc<Manager>, v: Value) -> Value {
     match v["type"].as_str() {
-        Some("ping") => json!({ "ok": true, "app": "OurIDM", "version": env!("CARGO_PKG_VERSION") }),
+        Some("ping") => json!({ "ok": true, "app": "Swoop", "version": env!("CARGO_PKG_VERSION") }),
         Some("hello") => {
             if let Some(b) = v["browser"].as_str() {
                 mgr.browser_connected(b);
             }
-            json!({ "ok": true, "app": "OurIDM", "version": env!("CARGO_PKG_VERSION") })
+            json!({ "ok": true, "app": "Swoop", "version": env!("CARGO_PKG_VERSION") })
         }
         Some("config") => {
             let s = mgr.settings();
@@ -174,7 +174,7 @@ async fn quick_add(mgr: &Arc<Manager>, d: &DownloadCapture) -> anyhow::Result<()
         .clone()
         .filter(|n| !n.is_empty())
         .or_else(|| probed.as_ref().map(|p| p.file_name.clone()))
-        .map(|n| idm_engine::sanitize_file_name(&n))
+        .map(|n| swoop_engine::sanitize_file_name(&n))
         .unwrap_or_else(|| "download".into());
     let (category, dir) = mgr.placement_for(&file_name);
     mgr.add(
@@ -198,11 +198,11 @@ async fn quick_add(mgr: &Arc<Manager>, d: &DownloadCapture) -> anyhow::Result<()
     Ok(())
 }
 
-pub async fn probe(mgr: &Manager, url: &str, headers: &[(String, String)]) -> Result<idm_engine::Probe, String> {
+pub async fn probe(mgr: &Manager, url: &str, headers: &[(String, String)]) -> Result<swoop_engine::Probe, String> {
     let s = mgr.settings();
-    let opts = idm_engine::Options { proxy: s.proxy.filter(|p| !p.trim().is_empty()), ..Default::default() };
-    let client = idm_engine::build_client(&opts).map_err(|e| e.to_string())?;
-    idm_engine::probe(&client, url, &idm_engine::header_map(headers)).await.map_err(|e| e.to_string())
+    let opts = swoop_engine::Options { proxy: s.proxy.filter(|p| !p.trim().is_empty()), ..Default::default() };
+    let client = swoop_engine::build_client(&opts).map_err(|e| e.to_string())?;
+    swoop_engine::probe(&client, url, &swoop_engine::header_map(headers)).await.map_err(|e| e.to_string())
 }
 
 /// True for http(s) URLs whose path ends in one of the capture extensions

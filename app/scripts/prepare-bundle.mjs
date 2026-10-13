@@ -9,11 +9,11 @@ const app = join(dirname(fileURLToPath(import.meta.url)), "..");
 const root = join(app, "..");
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: "inherit" });
 
-run("cargo build --release -p idm-host", root);
+run("cargo build --release -p swoop-host", root);
 const triple = execSync("rustc -vV", { encoding: "utf8" }).match(/host: (\S+)/)[1];
 const binDir = join(app, "src-tauri", "binaries");
 mkdirSync(binDir, { recursive: true });
-copyFileSync(join(root, "target", "release", "idm-host.exe"), join(binDir, `idm-host-${triple}.exe`));
+copyFileSync(join(root, "target", "release", "swoop-host.exe"), join(binDir, `swoop-host-${triple}.exe`));
 
 run("npm run build", join(root, "extension"));
 console.log("bundle inputs ready");

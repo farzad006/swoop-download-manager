@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
-use idm_engine::{CancellationToken, Options, RateLimiter, Request, Status};
+use swoop_engine::{CancellationToken, Options, RateLimiter, Request, Status};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
@@ -37,7 +37,7 @@ pub struct Manager {
 impl Manager {
     pub fn new(app: AppHandle, data_dir: PathBuf) -> Result<Arc<Self>> {
         std::fs::create_dir_all(&data_dir)?;
-        let db = Db::open(&data_dir.join("ouridm.db"))?;
+        let db = Db::open(&data_dir.join("swoop.db"))?;
         let mut settings = db.settings()?;
         if settings.download_root.is_empty() {
             settings.download_root = default_download_root().to_string_lossy().into_owned();
@@ -170,7 +170,7 @@ impl Manager {
             dest_dir: PathBuf::from(&rec.dest_dir),
             file_name: Some(rec.file_name.clone()),
         };
-        let handle = idm_engine::start_with_cancel(req, opts, cancel);
+        let handle = swoop_engine::start_with_cancel(req, opts, cancel);
         let mut rx = handle.progress.clone();
         let id = rec.id;
         let mut name = rec.file_name.clone();
@@ -465,7 +465,7 @@ fn after_queue(app: &AppHandle, action: AfterQueue) {
         AfterQueue::Shutdown => {
             // One minute's grace; `shutdown /a` cancels.
             let _ = std::process::Command::new("shutdown")
-                .args(["/s", "/t", "60", "/c", "OurIDM: download queue finished. Run 'shutdown /a' to cancel."])
+                .args(["/s", "/t", "60", "/c", "Swoop: download queue finished. Run 'shutdown /a' to cancel."])
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
         }

@@ -141,7 +141,7 @@ export default function Progress({ id }: { id: number }) {
           {running ? (
             <Button variant="primary" icon={Pause} onClick={() => api.pause(id)}>Pause</Button>
           ) : err?.action === "fix-link" ? (
-            <Button variant="primary" icon={Wrench} onClick={() => api.showMain().then(() => win.close())}>Fix in OurIDM</Button>
+            <Button variant="primary" icon={Wrench} onClick={() => api.showMain().then(() => win.close())}>Fix in Swoop</Button>
           ) : (
             <Button variant="primary" icon={Play} onClick={() => api.start(id)}>{status === "failed" ? "Try again" : "Resume"}</Button>
           )}

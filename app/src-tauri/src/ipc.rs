@@ -1,4 +1,4 @@
-//! Named-pipe server the native-messaging host (`idm-host.exe`) talks to.
+//! Named-pipe server the native-messaging host (`swoop-host.exe`) talks to.
 //! Protocol: one JSON object per line in each direction.
 
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use crate::capture::handle_browser;
 use crate::manager::Manager;
 
-pub const PIPE_NAME: &str = r"\\.\pipe\ouridm";
+pub const PIPE_NAME: &str = r"\\.\pipe\swoop";
 
 pub async fn serve(mgr: Arc<Manager>) {
     let mut server = match ServerOptions::new().first_pipe_instance(true).create(PIPE_NAME) {

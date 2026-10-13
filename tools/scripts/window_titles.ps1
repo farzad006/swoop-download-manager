@@ -1,6 +1,6 @@
 # Lists the titles of all top-level windows belonging to processes with the given name.
-# usage: powershell -File window_titles.ps1 OurIDM
-param([string]$ProcessName = "OurIDM")
+# usage: powershell -File window_titles.ps1 Swoop
+param([string]$ProcessName = "Swoop")
 Add-Type @"
 using System;
 using System.Collections.Generic;

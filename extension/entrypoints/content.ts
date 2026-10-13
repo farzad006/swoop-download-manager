@@ -55,8 +55,8 @@ export default defineContentScript({
     };
 
     const attach = (v: HTMLVideoElement) => {
-      if ((v as any).__ouridm) return;
-      (v as any).__ouridm = true;
+      if ((v as any).__swoop) return;
+      (v as any).__swoop = true;
       v.addEventListener("playing", () => activate(v));
       if (!v.paused && eligible(v)) activate(v);
     };
@@ -104,7 +104,7 @@ export default defineContentScript({
         .sendMessage({ type: "video-click", pageUrl: location.href, title: document.title, src })
         .catch((e: Error) => ({ ok: false, error: e.message }));
       panel.busy(false);
-      if (reply && reply.ok === false) panel.flash("OurIDM isn't running or isn't installed");
+      if (reply && reply.ok === false) panel.flash("Swoop isn't running or isn't installed");
     });
   },
 });
@@ -123,7 +123,7 @@ function collectLinks(selectionOnly: boolean): { url: string; text: string }[] {
 
 /** The floating button, isolated from page styles in a closed shadow root. */
 function createPanel() {
-  const host = document.createElement("ouridm-panel");
+  const host = document.createElement("swoop-panel");
   host.style.cssText = "all: initial; position: fixed; z-index: 2147483647; top: 0; left: 0; display: none;";
   const root = host.attachShadow({ mode: "closed" });
   root.innerHTML = `
@@ -141,7 +141,7 @@ function createPanel() {
       svg { width: 16px; height: 16px; flex: none; }
       .msg { margin-top: 4px; padding: 4px 8px; border-radius: 4px; background: #c42b1c; color: #fff; font: 12px "Segoe UI", sans-serif; display: none; }
     </style>
-    <button type="button" aria-label="Download this video with OurIDM">
+    <button type="button" aria-label="Download this video with Swoop">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>
       </svg>
