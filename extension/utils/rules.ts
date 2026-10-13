@@ -128,6 +128,17 @@ export function isOpaqueVideoHost(url: string): boolean {
   }
 }
 
+/** Which browser this is, so OurIDM's setup window can tick it off. */
+export function detectBrowser(ua: string, brands: string[] = [], isBrave = false): string {
+  if (/Firefox\//.test(ua)) return "firefox";
+  if (brands.some((b) => /Edge/i.test(b)) || /Edg\//.test(ua)) return "edge";
+  if (brands.some((b) => /Opera/i.test(b)) || /OPR\//.test(ua)) return "opera";
+  if (isBrave || brands.some((b) => /Brave/i.test(b))) return "brave";
+  if (/Vivaldi/.test(ua)) return "vivaldi";
+  if (brands.includes("Google Chrome")) return "chrome";
+  return "chromium";
+}
+
 export function fileNameFromPath(p: string): string {
   return p.split(/[\\/]/).pop() ?? p;
 }

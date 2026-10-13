@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyMedia, DEFAULT_CONFIG, extensionOf, mediaKey, shouldCapture, siteExcluded } from "./rules";
+import { classifyMedia, DEFAULT_CONFIG, detectBrowser, extensionOf, mediaKey, shouldCapture, siteExcluded } from "./rules";
 
 const cfg = { ...DEFAULT_CONFIG, captureExtensions: ["ZIP", "EXE", "R0*", "MP4"] };
 
@@ -44,6 +44,18 @@ describe("classifyMedia", () => {
     expect(classifyMedia("https://cdn/v.mp4", "video/mp4", 1000)).toBeNull();
     expect(classifyMedia("https://cdn/page", "text/html", 5_000_000)).toBeNull();
     expect(classifyMedia("blob:https://x/1", "video/mp4", 5_000_000)).toBeNull();
+  });
+});
+
+describe("detectBrowser", () => {
+  const chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
+  it("tells the browsers apart", () => {
+    expect(detectBrowser(chromeUA, ["Chromium", "Google Chrome", "Not=A?Brand"])).toBe("chrome");
+    expect(detectBrowser(`${chromeUA} Edg/155.0.0.0`, ["Chromium", "Microsoft Edge"])).toBe("edge");
+    expect(detectBrowser(`${chromeUA} OPR/135.0.0.0`, ["Chromium", "Opera"])).toBe("opera");
+    expect(detectBrowser(chromeUA, ["Chromium", "Brave"], true)).toBe("brave");
+    expect(detectBrowser("Mozilla/5.0 (Windows NT 10.0; rv:150.0) Gecko/20100101 Firefox/150.0")).toBe("firefox");
+    expect(detectBrowser(chromeUA, ["Chromium"])).toBe("chromium");
   });
 });
 

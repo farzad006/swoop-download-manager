@@ -6,6 +6,7 @@ import Progress from "./views/Progress";
 import Capture from "./views/Capture";
 import Video from "./views/Video";
 import Grabber from "./views/Grabber";
+import Browsers from "./views/Browsers";
 
 // Each Tauri window loads index.html#/<route>/<param>.
 function Route() {
@@ -19,6 +20,8 @@ function Route() {
       return <Video token={param} />;
     case "grabber":
       return <Grabber token={param} />;
+    case "browsers":
+      return <Browsers selected={(param ?? "").split(",").filter(Boolean)} />;
     default:
       return <Main />;
   }

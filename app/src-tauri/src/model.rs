@@ -116,6 +116,8 @@ pub struct Settings {
     pub proxy: Option<String>,
     pub prefer_mp4: bool,
     pub update_ytdlp: bool,
+    /// Browser id → unix time the extension last said hello from it.
+    pub connected_browsers: std::collections::BTreeMap<String, i64>,
 }
 
 pub const DEFAULT_CAPTURE_EXTENSIONS: &str = "3GP 7Z AAC ACE AIF APK ARJ ASF AVI BIN BZ2 EXE GZ GZIP IMG ISO LZH M4A M4V MKV MOV MP3 MP4 MPA MPE MPEG MPG MSI MSU OGG OGV PDF PLJ PPS PPT QT R0* R1* RA RAR RM RMVB SEA SIT SITX TAR TIF TIFF WAV WEBM WMA WMV Z ZIP DMG DEB RPM XZ ZST FLAC OPUS EPUB TORRENT";
@@ -140,6 +142,7 @@ impl Default for Settings {
             proxy: None,
             prefer_mp4: true,
             update_ytdlp: true,
+            connected_browsers: Default::default(),
         }
     }
 }

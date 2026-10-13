@@ -60,7 +60,22 @@ const queues: Queue[] = [
   { id: 1, name: "Main download queue", maxConcurrent: 2, schedule: { startTime: "02:00", stopTime: "07:00", days: [1, 2, 3, 4, 5] }, afterDone: "nothing", running: false },
 ];
 
+const ext = "C:\\Users\\you\\AppData\\Local\\OurIDM\\extension";
+const browsers = [
+  { id: "chrome", name: "Google Chrome", exe: "chrome.exe", engine: "chromium", connectedAt: null, extensionPath: `${ext}\\chrome-mv3`, signedXpi: false },
+  { id: "edge", name: "Microsoft Edge", exe: "msedge.exe", engine: "chromium", connectedAt: now - 60, extensionPath: `${ext}\\chrome-mv3`, signedXpi: false },
+  { id: "opera", name: "Opera", exe: "opera.exe", engine: "chromium", connectedAt: null as number | null, extensionPath: `${ext}\\chrome-mv3`, signedXpi: false },
+  { id: "firefox", name: "Mozilla Firefox", exe: "firefox.exe", engine: "firefox", connectedAt: null, extensionPath: `${ext}\\firefox-mv2\\manifest.json`, signedXpi: false },
+];
+
 export function installMockBackend() {
+  // Simulate the extension reporting in from Opera a few seconds after opening setup.
+  if (location.hash.startsWith("#/browsers")) {
+    setTimeout(() => {
+      browsers[2].connectedAt = Math.floor(Date.now() / 1000);
+      emit("browser-connected", "opera");
+    }, 4000);
+  }
   const label = location.hash.startsWith("#/progress") ? "progress-1" : "main";
   mockWindows(label);
   mockIPC(
@@ -81,6 +96,9 @@ export function installMockBackend() {
           const category = ext === "mp4" ? "Video" : ext === "mp3" ? "Music" : ext === "zip" ? "Compressed" : "General";
           return { category, destDir: category === "General" ? settings.downloadRoot : `${settings.downloadRoot}\\${category}` };
         }
+        case "list_browsers":
+          // Fresh objects each call, like real IPC (same refs would skip React updates).
+          return structuredClone(browsers);
         case "get_pending":
           return location.hash.startsWith("#/video")
             ? { type: "video", pageUrl: "https://videos.example.com/watch?v=abc", title: "Big Buck Bunny", streams: [] }

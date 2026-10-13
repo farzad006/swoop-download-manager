@@ -84,7 +84,9 @@ fn launch_app() -> io::Result<()> {
 }
 
 fn relay(msg: &Value) -> Value {
-    let launch = msg["type"].as_str() != Some("ping");
+    // Only real capture requests start OurIDM; status and config queries
+    // (sent whenever a browser starts) just report "not running".
+    let launch = matches!(msg["type"].as_str(), Some("download" | "video" | "links"));
     let pipe = match connect_or_launch(launch) {
         Ok(p) => p,
         Err(e) => return json!({ "ok": false, "error": format!("OurIDM is not running ({e})") }),

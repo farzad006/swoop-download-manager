@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "All OurIDM windows",
-  "windows": ["main", "progress-*", "capture-*", "video-*", "grabber-*"],
+  "windows": ["main", "browsers", "progress-*", "capture-*", "video-*", "grabber-*"],
   "permissions": [
     "core:default",
     "core:window:allow-close",

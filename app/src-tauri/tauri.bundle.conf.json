@@ -4,7 +4,9 @@
     "beforeBuildCommand": "node scripts/prepare-bundle.mjs && npm run build"
   },
   "bundle": {
-    "externalBin": ["binaries/idm-host"],
+    "externalBin": [
+      "binaries/idm-host"
+    ],
     "resources": {
       "../../extension/.output/chrome-mv3/": "extension/chrome-mv3/",
       "../../extension/.output/firefox-mv2/": "extension/firefox-mv2/"
@@ -15,7 +17,8 @@
       "nsis": {
         "installMode": "currentUser",
         "installerHooks": "installer.nsh",
-        "startMenuFolder": "OurIDM"
+        "startMenuFolder": "OurIDM",
+        "template": "installer/installer.nsi"
       }
     }
   }

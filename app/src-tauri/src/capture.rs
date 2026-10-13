@@ -118,6 +118,12 @@ pub enum Pending {
 pub async fn handle_browser(mgr: &Arc<Manager>, v: Value) -> Value {
     match v["type"].as_str() {
         Some("ping") => json!({ "ok": true, "app": "OurIDM", "version": env!("CARGO_PKG_VERSION") }),
+        Some("hello") => {
+            if let Some(b) = v["browser"].as_str() {
+                mgr.browser_connected(b);
+            }
+            json!({ "ok": true, "app": "OurIDM", "version": env!("CARGO_PKG_VERSION") })
+        }
         Some("config") => {
             let s = mgr.settings();
             json!({

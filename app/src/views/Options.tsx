@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, joinPath, Settings, ToolStatus } from "../api";
+import { api, BrowserStatus, Settings, ToolStatus } from "../api";
 import { Button, Check, Field, FolderInput, Modal, TextInput } from "../components/ui";
 
 const TABS = ["General", "File types", "Save to", "Connection", "Video", "Browsers"] as const;
@@ -8,12 +8,14 @@ type Tab = (typeof TABS)[number];
 export function OptionsDialog({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [tools, setTools] = useState<ToolStatus | null>(null);
+  const [browsers, setBrowsers] = useState<BrowserStatus[] | null>(null);
   const [tab, setTab] = useState<Tab>("General");
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     api.settings().then(setS);
     api.tools().then(setTools);
+    api.browsers().then(setBrowsers);
   }, []);
   if (!s) return null;
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS({ ...s, [k]: v });
@@ -143,30 +145,24 @@ export function OptionsDialog({ onClose }: { onClose: () => void }) {
         {tab === "Browsers" && tools && (
           <div className="space-y-3">
             <ToolRow name="Native host" path={tools.nativeHost} />
-            <div>
-              <div className="font-medium mb-1">Chrome, Edge, Opera, Brave</div>
-              <ol className="list-decimal pl-5 space-y-0.5 text-muted">
-                <li>Open <code>chrome://extensions</code> (Edge: <code>edge://extensions</code>, Opera: <code>opera://extensions</code>).</li>
-                <li>
-                  Turn on <b>Developer mode</b>, click <b>Load unpacked</b>, pick{" "}
-                  <code className="text-fg select-all">{joinPath(tools.extensionDir ?? "extension\\.output", "chrome-mv3")}</code>.
-                </li>
-                <li>The extension ID must read <code className="text-fg select-all">{tools.chromeExtensionId}</code>.</li>
-              </ol>
+            <div className="border border-line rounded-md divide-y divide-line">
+              {(browsers ?? []).map((b) => (
+                <div key={b.id} className="flex items-center h-9 px-3">
+                  <span className="flex-1">{b.name}</span>
+                  {b.connectedAt ? <span className="text-ok text-[12px]">Connected</span> : <span className="text-muted text-[12px]">Not connected</span>}
+                </div>
+              ))}
+              {browsers?.length === 0 && <div className="px-3 py-2 text-muted">No supported browsers found.</div>}
             </div>
-            <div>
-              <div className="font-medium mb-1">Firefox</div>
-              <ol className="list-decimal pl-5 space-y-0.5 text-muted">
-                <li>Open <code>about:debugging#/runtime/this-firefox</code> → <b>Load Temporary Add-on</b>.</li>
-                <li>
-                  Pick{" "}
-                  <code className="text-fg select-all">{joinPath(tools.extensionDir ?? "extension\\.output", "firefox-mv2\\manifest.json")}</code>{" "}
-                  (ID <code className="select-all">{tools.firefoxExtensionId}</code>).
-                </li>
-                <li>Temporary add-ons are removed when Firefox restarts; see the README for a permanent install.</li>
-              </ol>
+            <Button primary onClick={() => api.openBrowserSetupWindow()}>Set up browsers…</Button>
+            <div className="text-[12px] text-muted space-y-0.5">
+              <div>
+                Extension files: <code className="select-all">{tools.extensionDir ?? "not found"}</code>
+              </div>
+              <div>
+                IDs: <code className="select-all">{tools.chromeExtensionId}</code> (Chromium), <code>{tools.firefoxExtensionId}</code> (Firefox) · OurIDM {tools.version}
+              </div>
             </div>
-            <p className="text-[12px] text-muted">OurIDM {tools.version}</p>
           </div>
         )}
       </div>

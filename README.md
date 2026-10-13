@@ -8,11 +8,14 @@ DRM-protected streams (Netflix, Prime Video, Disney+, Spotify…) can't be downl
 
 ## Install
 
-1. Run `target\release\bundle\nsis\OurIDM_0.1.0_x64-setup.exe` (per-user, no admin). Start OurIDM once; it registers the browser connection itself.
-2. Video sites need **yt-dlp** and **ffmpeg** on `PATH` (already the case on this PC: yt-dlp via pip, ffmpeg via winget). With *Options → Video → Keep yt-dlp up to date* on, OurIDM upgrades yt-dlp once a day (`pip install -U yt-dlp` for pip installs).
-3. Add the browser extension (Options → Browsers shows the exact folder):
-   - **Chrome / Edge / Opera / Brave**: open `chrome://extensions` (`edge://extensions`, `opera://extensions`), enable **Developer mode**, **Load unpacked** → `<install dir>\extension\chrome-mv3`. The ID must be `fhnkijclhenhpkpllphcclallnnkkiib`.
-   - **Firefox** (140+): `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → `<install dir>\extension\firefox-mv2\manifest.json`. Temporary add-ons vanish on restart; for a permanent install sign it for free as an *unlisted* add-on on [addons.mozilla.org](https://addons.mozilla.org/developers/) (`npx web-ext sign --channel unlisted`) and install the signed `.xpi`.
+1. Run `target\release\bundle\nsis\OurIDM_0.2.0_x64-setup.exe` (per-user, no admin). The **Browser integration** page lists the browsers Windows knows about; tick the ones you use.
+2. When OurIDM starts, its **Connect your browsers** window walks through each ticked browser: *Open <browser>* (the extensions-page address is copied — press Ctrl+L, Ctrl+V, Enter), turn on Developer mode, then drag the extension folder that *Show the extension folder* selects onto the page. The card turns green when the extension reports in. Reopen it any time from Options → Browsers → *Set up browsers…*.
+3. Video sites need **yt-dlp** and **ffmpeg** on `PATH` (already the case on this PC: yt-dlp via pip, ffmpeg via winget). With *Options → Video → Keep yt-dlp up to date* on, OurIDM upgrades yt-dlp once a day (`pip install -U yt-dlp` for pip installs).
+
+Why the extension step isn't fully automatic: Chrome, Edge, Opera and Brave only let installers add extensions that come from their web stores (anything else needs the one-time developer-mode load), and they refuse to open `edge://`/`chrome://` pages for other programs. Firefox only installs Mozilla-signed add-ons. Publishing to the stores would turn this into a one-click "Enable extension?" prompt, the way IDM does it.
+
+- **Firefox** (140+): the setup window offers `about:debugging` → **Load Temporary Add-on** with the manifest path. Temporary add-ons vanish on restart; for a permanent install, sign it for free as an *unlisted* add-on on [addons.mozilla.org](https://addons.mozilla.org/developers/) (`npx web-ext sign --channel unlisted` in `extension/.output/firefox-mv2`) and save it as `extension/.output/ouridm-firefox.xpi` before building the installer — the setup window then shows a one-click **Install in Firefox**.
+- The Chromium extension ID must be `fhnkijclhenhpkpllphcclallnnkkiib` (fixed by `extension/extension-key.json`); Firefox's is `ouridm@local`.
 
 ## Using it
 
@@ -60,3 +63,7 @@ UI preview without the Rust backend: `npm --prefix app run dev` and open http://
 Extension end-to-end test (needs OurIDM running and `cargo run -p idm-testserver`): `BROWSER=edge node extension/e2e/chromium.e2e.mjs` (or `opera`). It drives a throwaway browser profile; Chrome 137+ ignores `--load-extension`, so Chrome can't be automated this way.
 
 The Chromium extension ID is fixed by the public key in `extension/extension-key.json`; the native host only accepts that ID (and `ouridm@local` for Firefox).
+
+Tests that run the app (`OURIDM_DATA_DIR=<temp folder>` keeps them away from your real download list — set it on the app and on the e2e script). Only one OurIDM runs at a time, so close an installed copy first.
+
+The installer is Tauri's stock NSIS template plus one page (`app/src-tauri/installer/browser-page.nsi`). After upgrading the Tauri CLI, re-fetch its template and rerun `python tools/scripts/splice_installer.py <template>` (instructions in the script).

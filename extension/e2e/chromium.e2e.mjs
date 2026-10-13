@@ -1,10 +1,11 @@
 // End-to-end check of the extension in a Chromium browser with a throwaway profile.
 // BROWSER=edge (default) | opera | chrome — note Chrome 137+ ignores --load-extension.
 // Needs: OurIDM running (native host registered), test server on 127.0.0.1:8899,
-// `npm run build:chrome` done. Run: node e2e/edge.e2e.mjs
+// `npm run build:chrome` done. Run: node e2e/chromium.e2e.mjs
 import { chromium } from "playwright-core";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -19,6 +20,7 @@ writeFileSync(
   join(profile, "Default", "Preferences"),
   JSON.stringify({ download: { default_directory: browserDownloads, prompt_for_download: false } }),
 );
+const startedAt = Math.floor(Date.now() / 1000) - 1;
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push({ name, ok });
@@ -70,6 +72,22 @@ try {
 
   const ping = await sw.evaluate(() => chrome.runtime.sendNativeMessage("com.ouridm.host", { type: "ping" }));
   check("native host reachable from the browser", ping?.ok === true, JSON.stringify(ping));
+
+  // On install the extension says hello; OurIDM stores it for its setup window.
+  const want = process.env.BROWSER ?? "edge";
+  let seenAt;
+  for (let i = 0; i < 20 && !seenAt; i++) {
+    const dataDir = process.env.OURIDM_DATA_DIR ?? join(process.env.APPDATA ?? "", "com.ouridm.app");
+    const db = new DatabaseSync(join(dataDir, "ouridm.db"), { readOnly: true });
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'settings'").get();
+    db.close();
+    seenAt = row ? JSON.parse(row.value).connectedBrowsers?.[want] : undefined;
+    if (!seenAt || seenAt < startedAt) {
+      seenAt = undefined;
+      await sleep(250);
+    }
+  }
+  check(`OurIDM recorded the extension as connected in ${want}`, !!seenAt, seenAt ? new Date(seenAt * 1000).toLocaleTimeString() : "not recorded");
 
   const page = await ctx.newPage();
   await page.goto(`${BASE}/page`);

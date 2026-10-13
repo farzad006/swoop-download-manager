@@ -31,6 +31,11 @@ pub fn open_dialog(app: &AppHandle, route: &str, token: &str) -> tauri::Result<(
     open(app, &format!("{route}-{token}"), &format!("/{route}/{token}"), title, size, true)
 }
 
+/// "Connect your browsers" — `selected` are the ones ticked in the installer.
+pub fn open_browsers(app: &AppHandle, selected: &[String]) -> tauri::Result<()> {
+    open(app, "browsers", &format!("/browsers/{}", selected.join(",")), "Connect OurIDM to your browsers", (720.0, 600.0), false)
+}
+
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();

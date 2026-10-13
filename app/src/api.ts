@@ -170,6 +170,16 @@ export interface ToolStatus {
   version: string;
 }
 
+export interface BrowserStatus {
+  id: string;
+  name: string;
+  exe: string;
+  engine: "chromium" | "firefox";
+  connectedAt: number | null;
+  extensionPath: string | null;
+  signedXpi: boolean;
+}
+
 export const api = {
   list: () => invoke<Download[]>("list_downloads"),
   get: (id: number) => invoke<Download | null>("get_download", { id }),
@@ -209,6 +219,11 @@ export const api = {
     invoke<number>("add_stream_direct", a),
   tools: () => invoke<ToolStatus>("tool_status"),
   captureUrl: (url: string) => invoke<void>("capture_url", { url }),
+  browsers: () => invoke<BrowserStatus[]>("list_browsers"),
+  /** Opens the browser and copies its extensions-page address (returned). */
+  openBrowserSetup: (id: string) => invoke<string | null>("open_browser_setup", { id }),
+  revealExtension: (id: string) => invoke<void>("reveal_extension", { id }),
+  openBrowserSetupWindow: (selected: string[] = []) => invoke<void>("open_browser_setup_window", { selected }),
 };
 
 export const MAIN_QUEUE = 1;

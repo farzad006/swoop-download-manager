@@ -69,6 +69,14 @@ impl Manager {
         Ok(())
     }
 
+    /// The extension reported in from a browser: remember it and tell the setup window.
+    pub fn browser_connected(&self, browser: &str) {
+        let mut s = self.settings();
+        s.connected_browsers.insert(browser.to_string(), crate::db::now());
+        let _ = self.save_settings(s);
+        let _ = self.app.emit("browser-connected", browser);
+    }
+
     /// Category and folder IDM would pick for this file name.
     pub fn placement_for(&self, file_name: &str) -> (String, PathBuf) {
         let s = self.settings.read().unwrap();

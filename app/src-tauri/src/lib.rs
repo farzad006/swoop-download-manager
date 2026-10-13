@@ -1,4 +1,5 @@
 mod background;
+mod browsers;
 mod capture;
 mod categories;
 mod commands;
@@ -85,7 +86,11 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .setup(move |app| {
-            let data_dir = app.path().app_data_dir()?;
+            // OURIDM_DATA_DIR keeps test runs away from the real download list.
+            let data_dir = match std::env::var_os("OURIDM_DATA_DIR") {
+                Some(d) => std::path::PathBuf::from(d),
+                None => app.path().app_data_dir()?,
+            };
             let mgr = Manager::new(app.handle().clone(), data_dir.clone())?;
             app.manage(mgr.clone());
             if let Err(e) = background::register_native_host(&data_dir) {
@@ -100,6 +105,17 @@ pub fn run() {
             }
             if !background_start {
                 windows::show_main(app.handle());
+            }
+            // First start after install: walk through the browsers ticked in the installer.
+            let mut picked = browsers::take_installer_selection();
+            if let Some(arg) = std::env::args().find_map(|a| a.strip_prefix("--setup-browsers=").map(str::to_owned)) {
+                picked.extend(browsers::parse_selection(&arg));
+            }
+            if !picked.is_empty() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = windows::open_browsers(&handle, &picked);
+                });
             }
             Ok(())
         })
@@ -143,6 +159,10 @@ pub fn run() {
             commands::tool_status,
             commands::show_main,
             commands::capture_url,
+            commands::list_browsers,
+            commands::open_browser_setup,
+            commands::reveal_extension,
+            commands::open_browser_setup_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building OurIDM");

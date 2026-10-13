@@ -1,5 +1,5 @@
 import { browser } from "wxt/browser";
-import { classifyMedia, fileNameFromPath, isOpaqueVideoHost, mediaKey, shouldCapture, type MediaHit } from "@/utils/rules";
+import { classifyMedia, detectBrowser, fileNameFromPath, isOpaqueVideoHost, mediaKey, shouldCapture, type MediaHit } from "@/utils/rules";
 import { cookieHeader, cookieObjects, getConfig, sendNative } from "@/utils/native";
 
 type TabMedia = Record<string, MediaHit>;
@@ -204,5 +204,19 @@ export default defineBackground(() => {
     }
   });
 
-  getConfig(true);
+  // Tell OurIDM which browser we are (its setup window ticks it off), once per
+  // browser session: MV3 workers restart often and each native call spawns a process.
+  async function hello(force = false) {
+    if (!force && (await sessionStore.get("helloSent")).helloSent) return;
+    const nav = navigator as Navigator & { userAgentData?: { brands: { brand: string }[] }; brave?: unknown };
+    const reply = await sendNative({
+      type: "hello",
+      browser: detectBrowser(navigator.userAgent, nav.userAgentData?.brands.map((b) => b.brand) ?? [], !!nav.brave),
+      version: browser.runtime.getManifest().version,
+    });
+    if (reply.ok) await sessionStore.set({ helloSent: true });
+    getConfig(true);
+  }
+  browser.runtime.onInstalled.addListener(() => hello(true));
+  hello();
 });

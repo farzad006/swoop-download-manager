@@ -7,6 +7,7 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::background;
+use crate::browsers;
 use crate::capture::{self, MediaStream, Pending};
 use crate::manager::Manager;
 use crate::model::{DownloadRecord, Kind, NewDownload, Queue, Settings};
@@ -142,7 +143,9 @@ pub fn get_settings(mgr: Mgr) -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, mgr: Mgr, settings: Settings) -> Res<()> {
+pub fn save_settings(app: AppHandle, mgr: Mgr, mut settings: Settings) -> Res<()> {
+    // Maintained by the backend; the UI's copy may be stale.
+    settings.connected_browsers = mgr.settings().connected_browsers;
     let autostart = app.autolaunch();
     if settings.start_with_windows != autostart.is_enabled().unwrap_or(false) {
         let r = if settings.start_with_windows { autostart.enable() } else { autostart.disable() };
@@ -349,18 +352,24 @@ pub struct ToolStatus {
     pub version: &'static str,
 }
 
-#[tauri::command]
-pub fn tool_status(app: AppHandle) -> ToolStatus {
+/// Folder with the `chrome-mv3` / `firefox-mv2` builds: bundled resources when
+/// installed, the repo's build output in development.
+pub fn extension_dir(app: &AppHandle) -> Option<PathBuf> {
     use tauri::Manager as _;
-    let s = |p: Option<PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
-    // Installed: bundled resources. Development: the repo's build output.
-    let extension_dir = [
+    [
         app.path().resource_dir().ok().map(|d| d.join("extension")),
         std::env::current_exe().ok().and_then(|e| Some(e.parent()?.parent()?.parent()?.join("extension").join(".output"))),
     ]
     .into_iter()
     .flatten()
-    .find(|d| d.join("chrome-mv3").join("manifest.json").is_file());
+    .find(|d| d.join("chrome-mv3").join("manifest.json").is_file())
+}
+
+#[tauri::command]
+pub fn tool_status(app: AppHandle) -> ToolStatus {
+    let s = |p: Option<PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
+    // Installed: bundled resources. Development: the repo's build output.
+    let extension_dir = extension_dir(&app);
     ToolStatus {
         ytdlp: s(video::find_binary("yt-dlp")),
         ffmpeg: s(video::find_binary("ffmpeg")),
@@ -393,4 +402,80 @@ pub async fn capture_url(mgr: Mgr<'_>, url: String) -> Res<()> {
     };
     capture::capture(&mgr, Pending::Download(d)).await;
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStatus {
+    #[serde(flatten)]
+    pub browser: browsers::Browser,
+    /// Unix time the extension last reported in from this browser.
+    pub connected_at: Option<i64>,
+    /// Folder (or signed .xpi) to load into this browser.
+    pub extension_path: Option<String>,
+    /// Firefox only: a Mozilla-signed add-on that installs permanently in one click.
+    pub signed_xpi: bool,
+}
+
+fn signed_xpi(app: &AppHandle) -> Option<PathBuf> {
+    extension_dir(app).map(|d| d.join("ouridm-firefox.xpi")).filter(|p| p.is_file())
+}
+
+#[tauri::command]
+pub fn list_browsers(app: AppHandle, mgr: Mgr) -> Vec<BrowserStatus> {
+    let connected = mgr.settings().connected_browsers;
+    let ext = extension_dir(&app);
+    let xpi = signed_xpi(&app);
+    browsers::detect()
+        .into_iter()
+        .map(|b| {
+            let extension_path = match b.engine {
+                browsers::Engine::Chromium => ext.as_ref().map(|d| d.join("chrome-mv3")),
+                browsers::Engine::Firefox => xpi.clone().or_else(|| ext.as_ref().map(|d| d.join("firefox-mv2").join("manifest.json"))),
+            };
+            BrowserStatus {
+                connected_at: connected.get(&b.id).copied(),
+                extension_path: extension_path.map(|p| p.to_string_lossy().into_owned()),
+                signed_xpi: b.engine == browsers::Engine::Firefox && xpi.is_some(),
+                browser: b,
+            }
+        })
+        .collect()
+}
+
+fn find_browser(id: &str) -> Res<browsers::Browser> {
+    browsers::detect().into_iter().find(|b| b.id == id).ok_or_else(|| format!("{id} isn't installed"))
+}
+
+/// Brings the browser up and puts its extensions-page address on the clipboard
+/// (browsers won't open those pages for other programs). Returns the address,
+/// or `None` when a signed Firefox add-on was handed over instead.
+#[tauri::command]
+pub fn open_browser_setup(app: AppHandle, id: String) -> Res<Option<String>> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let b = find_browser(&id)?;
+    let xpi = signed_xpi(&app).filter(|_| b.engine == browsers::Engine::Firefox);
+    let page = xpi.is_none().then(|| browsers::extensions_page(&b).to_string());
+    if let Some(p) = &page {
+        app.clipboard().write_text(p.clone()).map_err(err)?;
+    }
+    browsers::launch(&b, xpi.as_deref()).map_err(err)?;
+    Ok(page)
+}
+
+/// Shows the extension folder in Explorer, selected, ready to drag onto the page.
+#[tauri::command]
+pub fn reveal_extension(app: AppHandle, id: String) -> Res<()> {
+    let b = find_browser(&id)?;
+    let dir = extension_dir(&app).ok_or("The extension files weren't found.")?;
+    let target = match b.engine {
+        browsers::Engine::Chromium => dir.join("chrome-mv3"),
+        browsers::Engine::Firefox => signed_xpi(&app).unwrap_or_else(|| dir.join("firefox-mv2").join("manifest.json")),
+    };
+    browsers::reveal(&target).map_err(err)
+}
+
+#[tauri::command]
+pub fn open_browser_setup_window(app: AppHandle, selected: Vec<String>) -> Res<()> {
+    crate::windows::open_browsers(&app, &selected).map_err(err)
 }
