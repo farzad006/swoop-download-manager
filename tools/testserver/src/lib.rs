@@ -63,7 +63,10 @@ pub async fn spawn() -> TestServer {
 
 pub async fn spawn_on(bind: &str) -> TestServer {
     let stats = Stats::default();
-    let app = Router::new().route("/file/{size}", get(serve)).with_state(stats.clone());
+    let app = Router::new()
+        .route("/file/{size}", get(serve))
+        .route("/page", get(page))
+        .with_state(stats.clone());
     let listener = tokio::net::TcpListener::bind(bind).await.expect("bind test server");
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -121,7 +124,8 @@ async fn serve(
     *resp.status_mut() = status;
     let h = resp.headers_mut();
     h.insert(header::CONTENT_LENGTH, HeaderValue::from(len));
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    let ct = q.get("type").map(String::as_str).unwrap_or("application/octet-stream");
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(ct).unwrap_or(HeaderValue::from_static("application/octet-stream")));
     h.insert(header::ETAG, HeaderValue::from_str(&etag).unwrap());
     if ranges {
         h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
@@ -135,6 +139,18 @@ async fn serve(
         h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_str(&cd).unwrap());
     }
     resp
+}
+
+/// A page with a download link and a video, for browser-extension tests.
+async fn page() -> axum::response::Html<&'static str> {
+    axum::response::Html(
+        r#"<!doctype html><html><head><title>OurIDM test page</title></head><body>
+<h1>OurIDM test page</h1>
+<p><a id="zip" href="/file/3000000?name=from-browser.zip">Download from-browser.zip</a></p>
+<p><a id="html" href="/file/2000?name=notes.html&type=text/html">A link the browser keeps</a></p>
+<video id="v" width="640" height="360" muted preload="auto" src="/file/4000000?name=clip.mp4&type=video/mp4"></video>
+</body></html>"#,
+    )
 }
 
 fn async_stream(

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>OurIDM</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <strong>OurIDM</strong>
+      <span id="status" class="status">Checking…</span>
+    </header>
+    <label class="row toggle">
+      <input type="checkbox" id="capture" />
+      <span>Take over browser downloads</span>
+    </label>
+    <button id="video" class="primary">Download video from this page</button>
+    <section>
+      <h2>Media detected on this tab</h2>
+      <ul id="media"></ul>
+      <p id="empty" class="muted">Nothing yet. Start playing a video.</p>
+    </section>
+    <p class="muted small">Hold <kbd>Alt</kbd> while clicking a link to let the browser download it.</p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
