@@ -30,8 +30,15 @@ window.addEventListener("contextmenu", (e) => {
   if (!t.closest("input, textarea")) e.preventDefault();
 });
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <Route />
-  </React.StrictMode>,
-);
+async function boot() {
+  // Plain-browser preview during development: fake the Rust backend.
+  if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window && (window as any).__TAURI_INTERNALS__?.invoke)) {
+    (await import("./dev/mockBackend")).installMockBackend();
+  }
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <Route />
+    </React.StrictMode>,
+  );
+}
+boot();

@@ -57,7 +57,7 @@ export default function Progress({ id }: { id: number }) {
   win.setTitle(title).catch(() => {});
 
   return (
-    <div className="h-full flex flex-col p-4 gap-2 bg-surface">
+    <div className="h-full flex flex-col px-4 py-3 gap-1.5 bg-surface overflow-hidden">
       <Info label="Address" value={d.url} />
       <Info
         label="Status"
@@ -75,15 +75,17 @@ export default function Progress({ id }: { id: number }) {
       <Info label="Transfer rate" value={running ? fmtSpeed(p?.speed ?? 0) : ""} />
       <Info label="Time left" value={running ? fmtEta(p?.etaSecs) : ""} />
       <Info label="Resume capability" value={d.kind === "video" ? "Yes" : d.resumable ? "Yes" : "No"} />
-      <ProgressBar value={pc} />
+      <div className="shrink-0 pt-1">
+        <ProgressBar value={pc} />
+      </div>
 
       {details && d.kind === "http" && (
-        <div className="mt-1 space-y-1.5">
+        <div className="shrink min-h-0 flex flex-col gap-1.5 pt-1">
           <SegmentBar segments={p?.segments ?? []} total={total} />
           <div className="text-[12px] text-muted">
             {p?.connections ?? 0} active connection{p?.connections === 1 ? "" : "s"} · {p?.segments.length ?? 0} segments
           </div>
-          <div className="max-h-[96px] overflow-auto border border-line rounded">
+          <div className="min-h-0 max-h-[84px] overflow-auto border border-line rounded">
             <table className="w-full text-[12px]">
               <tbody>
                 {(p?.segments ?? []).map((s, i) => (
@@ -99,7 +101,7 @@ export default function Progress({ id }: { id: number }) {
         </div>
       )}
 
-      <div className="mt-auto flex justify-end gap-2 pt-2">
+      <div className="mt-auto shrink-0 flex justify-end gap-2 pt-2">
         {d.kind === "http" && <Button onClick={() => setDetails(!details)}>{details ? "<< Hide details" : "Show details >>"}</Button>}
         {running ? (
           <Button primary onClick={() => api.pause(id)}>Pause</Button>

@@ -164,6 +164,7 @@ export interface ToolStatus {
   ytdlp: string | null;
   ffmpeg: string | null;
   nativeHost: string | null;
+  extensionDir: string | null;
   chromeExtensionId: string;
   firefoxExtensionId: string;
   version: string;

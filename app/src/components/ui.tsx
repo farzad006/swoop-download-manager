@@ -117,7 +117,7 @@ export function ProgressBar({ value }: { value: number | null }) {
 export function SegmentBar({ segments, total }: { segments: Segment[]; total: number | null }) {
   if (!total || segments.length === 0) return <ProgressBar value={null} />;
   return (
-    <div className="relative h-5 rounded bg-seg-empty overflow-hidden" aria-label="Connection progress">
+    <div className="relative h-5 shrink-0 rounded bg-seg-empty overflow-hidden" aria-label="Connection progress">
       {segments.map((s, i) => {
         const end = Math.min(s.end, total);
         const left = (s.start / total) * 100;

@@ -18,7 +18,7 @@ fn open(app: &AppHandle, label: &str, route: &str, title: &str, size: (f64, f64)
 }
 
 pub fn open_progress(app: &AppHandle, id: i64) -> tauri::Result<()> {
-    open(app, &format!("progress-{id}"), &format!("/progress/{id}"), "Download progress", (560.0, 400.0), false)
+    open(app, &format!("progress-{id}"), &format!("/progress/{id}"), "Download progress", (560.0, 430.0), false)
 }
 
 /// Capture, video and link-grabber dialogs, keyed by their pending token.

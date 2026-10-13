@@ -342,18 +342,30 @@ pub struct ToolStatus {
     pub ytdlp: Option<String>,
     pub ffmpeg: Option<String>,
     pub native_host: Option<String>,
+    /// Folder holding `chrome-mv3` and `firefox-mv2` extension builds.
+    pub extension_dir: Option<String>,
     pub chrome_extension_id: &'static str,
     pub firefox_extension_id: &'static str,
     pub version: &'static str,
 }
 
 #[tauri::command]
-pub fn tool_status() -> ToolStatus {
+pub fn tool_status(app: AppHandle) -> ToolStatus {
+    use tauri::Manager as _;
     let s = |p: Option<PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
+    // Installed: bundled resources. Development: the repo's build output.
+    let extension_dir = [
+        app.path().resource_dir().ok().map(|d| d.join("extension")),
+        std::env::current_exe().ok().and_then(|e| Some(e.parent()?.parent()?.parent()?.join("extension").join(".output"))),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|d| d.join("chrome-mv3").join("manifest.json").is_file());
     ToolStatus {
         ytdlp: s(video::find_binary("yt-dlp")),
         ffmpeg: s(video::find_binary("ffmpeg")),
         native_host: s(background::host_exe()),
+        extension_dir: s(extension_dir),
         chrome_extension_id: background::CHROME_EXTENSION_ID,
         firefox_extension_id: background::FIREFOX_EXTENSION_ID,
         version: env!("CARGO_PKG_VERSION"),

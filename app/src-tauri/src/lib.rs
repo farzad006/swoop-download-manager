@@ -96,7 +96,7 @@ pub fn run() {
             tauri::async_runtime::spawn(background::scheduler(mgr.clone()));
             tauri::async_runtime::spawn(background::clipboard_monitor(mgr.clone()));
             if mgr.settings().update_ytdlp {
-                tauri::async_runtime::spawn(video::self_update());
+                tauri::async_runtime::spawn(video::update_ytdlp(data_dir.join("yt-dlp-updated")));
             }
             if !background_start {
                 windows::show_main(app.handle());

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Settings, ToolStatus } from "../api";
+import { api, joinPath, Settings, ToolStatus } from "../api";
 import { Button, Check, Field, FolderInput, Modal, TextInput } from "../components/ui";
 
 const TABS = ["General", "File types", "Save to", "Connection", "Video", "Browsers"] as const;
@@ -129,7 +129,7 @@ export function OptionsDialog({ onClose }: { onClose: () => void }) {
           <>
             <Check checked={s.videoPanel} onChange={(v) => set("videoPanel", v)} label="Show the 'Download this video' button over web videos" />
             <Check checked={s.preferMp4} onChange={(v) => set("preferMp4", v)} label="Prefer MP4 (best compatibility) over WebM/MKV" />
-            <Check checked={s.updateYtdlp} onChange={(v) => set("updateYtdlp", v)} label="Update the bundled yt-dlp at startup (sites change often)" />
+            <Check checked={s.updateYtdlp} onChange={(v) => set("updateYtdlp", v)} label="Keep yt-dlp up to date (checked once a day; sites change often)" />
             <div className="pt-3 space-y-1 text-[12px]">
               <ToolRow name="yt-dlp" path={tools?.ytdlp} />
               <ToolRow name="ffmpeg" path={tools?.ffmpeg} />
@@ -147,7 +147,10 @@ export function OptionsDialog({ onClose }: { onClose: () => void }) {
               <div className="font-medium mb-1">Chrome, Edge, Opera, Brave</div>
               <ol className="list-decimal pl-5 space-y-0.5 text-muted">
                 <li>Open <code>chrome://extensions</code> (Edge: <code>edge://extensions</code>, Opera: <code>opera://extensions</code>).</li>
-                <li>Turn on <b>Developer mode</b>, click <b>Load unpacked</b>, pick <code>extension\.output\chrome-mv3</code>.</li>
+                <li>
+                  Turn on <b>Developer mode</b>, click <b>Load unpacked</b>, pick{" "}
+                  <code className="text-fg select-all">{joinPath(tools.extensionDir ?? "extension\\.output", "chrome-mv3")}</code>.
+                </li>
                 <li>The extension ID must read <code className="text-fg select-all">{tools.chromeExtensionId}</code>.</li>
               </ol>
             </div>
@@ -155,7 +158,12 @@ export function OptionsDialog({ onClose }: { onClose: () => void }) {
               <div className="font-medium mb-1">Firefox</div>
               <ol className="list-decimal pl-5 space-y-0.5 text-muted">
                 <li>Open <code>about:debugging#/runtime/this-firefox</code> → <b>Load Temporary Add-on</b>.</li>
-                <li>Pick <code>extension\.output\firefox-mv2\manifest.json</code> (ID <code className="select-all">{tools.firefoxExtensionId}</code>).</li>
+                <li>
+                  Pick{" "}
+                  <code className="text-fg select-all">{joinPath(tools.extensionDir ?? "extension\\.output", "firefox-mv2\\manifest.json")}</code>{" "}
+                  (ID <code className="select-all">{tools.firefoxExtensionId}</code>).
+                </li>
+                <li>Temporary add-ons are removed when Firefox restarts; see the README for a permanent install.</li>
               </ol>
             </div>
             <p className="text-[12px] text-muted">OurIDM {tools.version}</p>

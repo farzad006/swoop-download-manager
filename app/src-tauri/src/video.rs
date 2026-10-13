@@ -306,12 +306,27 @@ async fn kill_tree(pid: Option<u32>) {
     }
 }
 
-/// Updates a bundled yt-dlp (one sitting next to the app) in place.
-pub async fn self_update() {
-    let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) else { return };
-    let bundled = exe_dir.join("yt-dlp.exe");
-    if bundled.is_file() {
-        let _ = command(&bundled).arg("-U").output().await;
+/// Keeps yt-dlp current (sites change their players often), at most once a
+/// day. A standalone yt-dlp.exe updates itself; a pip install (the exe lives in
+/// a Python `Scripts` folder) is upgraded with that Python's pip.
+pub async fn update_ytdlp(stamp_file: PathBuf) {
+    let fresh = std::fs::metadata(&stamp_file)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < std::time::Duration::from_secs(24 * 3600));
+    let Some(exe) = find_binary("yt-dlp") else { return };
+    if fresh {
+        return;
+    }
+    let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
+    let python = dir.file_name().filter(|n| n.eq_ignore_ascii_case("Scripts")).and_then(|_| dir.parent()).map(|p| p.join("python.exe"));
+    let result = match python.filter(|p| p.is_file()) {
+        Some(py) => command(&py).args(["-m", "pip", "install", "-U", "--quiet", "yt-dlp"]).output().await,
+        None => command(&exe).arg("-U").output().await,
+    };
+    if result.is_ok() {
+        let _ = std::fs::write(&stamp_file, b"");
     }
 }
 

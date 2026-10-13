@@ -200,7 +200,7 @@ export default function Main() {
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex flex-col items-center justify-center gap-0.5 w-[74px] h-[54px] rounded-md hover:bg-hover disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition-colors"
+      className="flex flex-col items-center justify-center gap-0.5 min-w-[64px] px-2 h-[54px] rounded-md whitespace-nowrap hover:bg-hover disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition-colors"
     >
       <Icon size={22} strokeWidth={1.6} className="text-accent" />
       <span className="text-[12px] leading-tight">{label}</span>
@@ -208,9 +208,9 @@ export default function Main() {
   );
 
   const col = (key: SortKey, label: string, cls: string) => (
-    <th className={`font-normal text-muted text-left px-2 h-8 border-b border-line ${cls}`}>
+    <th className={`font-normal text-muted text-left px-2 h-8 border-b border-line whitespace-nowrap overflow-hidden ${cls}`}>
       <button
-        className="w-full text-left cursor-pointer hover:text-fg"
+        className="w-full text-left cursor-pointer hover:text-fg truncate"
         onClick={() => setSort((s) => ({ key, asc: s.key === key ? !s.asc : true }))}
       >
         {label}
@@ -228,12 +228,12 @@ export default function Main() {
         {tool("Stop", Pause, stopSel, sel.length === 0)}
         {tool("Stop All", PauseOctagon, () => run(api.pauseAll), active.length === 0)}
         {tool("Delete", Trash2, () => setDialog("delete"), sel.length === 0)}
-        {tool("Delete Co…", Eraser, () => run(api.removeCompleted))}
+        {tool("Delete Completed", Eraser, () => run(api.removeCompleted))}
         <div className="w-px h-10 bg-line mx-1" />
         {tool("Options", SettingsIcon, () => setDialog("options"))}
         {tool("Scheduler", CalendarClock, () => setDialog("scheduler"))}
-        {tool("Start Qu…", PlayCircle, () => run(() => api.startQueue(runningQueue)), queueRunning)}
-        {tool("Stop Qu…", SquareStop, () => run(() => api.stopQueue(runningQueue)), !queueRunning)}
+        {tool("Start Queue", PlayCircle, () => run(() => api.startQueue(runningQueue)), queueRunning)}
+        {tool("Stop Queue", SquareStop, () => run(() => api.stopQueue(runningQueue)), !queueRunning)}
       </div>
 
       <div className="flex-1 flex min-h-0">
