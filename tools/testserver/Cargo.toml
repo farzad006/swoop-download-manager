@@ -1,0 +1,10 @@
+[package]
+name = "idm-testserver"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+axum = "0.8.9"
+bytes = "1.12.1"
+futures-util = "0.3.34"
+tokio = { version = "1.53.2", features = ["full"] }
