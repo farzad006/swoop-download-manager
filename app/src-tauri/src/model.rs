@@ -116,6 +116,8 @@ pub struct Settings {
     pub proxy: Option<String>,
     pub prefer_mp4: bool,
     pub update_ytdlp: bool,
+    /// The first-run welcome has been completed.
+    pub onboarded: bool,
     /// Browser id → unix time the extension last said hello from it.
     pub connected_browsers: std::collections::BTreeMap<String, i64>,
 }
@@ -143,6 +145,7 @@ impl Default for Settings {
             prefer_mp4: true,
             update_ytdlp: true,
             connected_browsers: Default::default(),
+            onboarded: false,
         }
     }
 }

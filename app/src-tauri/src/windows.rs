@@ -18,22 +18,22 @@ fn open(app: &AppHandle, label: &str, route: &str, title: &str, size: (f64, f64)
 }
 
 pub fn open_progress(app: &AppHandle, id: i64) -> tauri::Result<()> {
-    open(app, &format!("progress-{id}"), &format!("/progress/{id}"), "Download progress", (560.0, 430.0), false)
+    open(app, &format!("progress-{id}"), &format!("/progress/{id}"), "Download progress", (540.0, 420.0), false)
 }
 
 /// Capture, video and link-grabber dialogs, keyed by their pending token.
 pub fn open_dialog(app: &AppHandle, route: &str, token: &str) -> tauri::Result<()> {
     let (title, size) = match route {
-        "capture" => ("Download File Info", (600.0, 330.0)),
-        "video" => ("Download Video", (640.0, 520.0)),
-        _ => ("Download Links", (860.0, 600.0)),
+        "capture" => ("Download file", (600.0, 470.0)),
+        "video" => ("Download video", (680.0, 600.0)),
+        _ => ("Download links", (860.0, 620.0)),
     };
     open(app, &format!("{route}-{token}"), &format!("/{route}/{token}"), title, size, true)
 }
 
 /// "Connect your browsers" — `selected` are the ones ticked in the installer.
 pub fn open_browsers(app: &AppHandle, selected: &[String]) -> tauri::Result<()> {
-    open(app, "browsers", &format!("/browsers/{}", selected.join(",")), "Connect OurIDM to your browsers", (720.0, 600.0), false)
+    open(app, "browsers", &format!("/browsers/{}", selected.join(",")), "Connect OurIDM to your browsers", (700.0, 640.0), false)
 }
 
 pub fn show_main(app: &AppHandle) {

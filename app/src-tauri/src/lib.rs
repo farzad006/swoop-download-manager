@@ -103,7 +103,8 @@ pub fn run() {
             if mgr.settings().update_ytdlp {
                 tauri::async_runtime::spawn(video::update_ytdlp(data_dir.join("yt-dlp-updated")));
             }
-            if !background_start {
+            // The first-run welcome lives in the main window, so show it even for background starts.
+            if !background_start || !mgr.settings().onboarded {
                 windows::show_main(app.handle());
             }
             // First start after install: walk through the browsers ticked in the installer.
@@ -111,7 +112,10 @@ pub fn run() {
             if let Some(arg) = std::env::args().find_map(|a| a.strip_prefix("--setup-browsers=").map(str::to_owned)) {
                 picked.extend(browsers::parse_selection(&arg));
             }
-            if !picked.is_empty() {
+            if !mgr.settings().onboarded {
+                // The welcome screen includes browser setup; it picks these up.
+                *mgr.browser_selection.lock().unwrap() = picked;
+            } else if !picked.is_empty() {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = windows::open_browsers(&handle, &picked);
@@ -163,6 +167,8 @@ pub fn run() {
             commands::open_browser_setup,
             commands::reveal_extension,
             commands::open_browser_setup_window,
+            commands::take_browser_selection,
+            commands::clipboard_link,
         ])
         .build(tauri::generate_context!())
         .expect("error while building OurIDM");

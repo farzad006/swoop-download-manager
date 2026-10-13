@@ -30,6 +30,8 @@ pub struct Manager {
     settings: RwLock<Settings>,
     global_limiter: Arc<RateLimiter>,
     pub pending: Mutex<HashMap<String, Pending>>,
+    /// Browsers ticked in the installer, handed to the first-run welcome.
+    pub browser_selection: Mutex<Vec<String>>,
 }
 
 impl Manager {
@@ -51,6 +53,7 @@ impl Manager {
             settings: RwLock::new(settings),
             global_limiter,
             pending: Mutex::new(HashMap::new()),
+            browser_selection: Mutex::new(Vec::new()),
         }))
     }
 

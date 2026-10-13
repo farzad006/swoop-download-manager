@@ -1,46 +1,75 @@
 @import "tailwindcss";
 
-/* Fluent-style tokens; dark values follow the OS theme. */
+/* Design tokens. Light by default; dark follows the OS theme. */
 @theme {
   --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --color-bg: #f3f3f3;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+
+  --color-bg: #f4f6fa;
   --color-surface: #ffffff;
-  --color-surface-2: #f9f9f9;
-  --color-hover: #ebebeb;
-  --color-selected: #dbe9fb;
-  --color-line: #e0e0e0;
-  --color-fg: #1b1b1b;
-  --color-muted: #5f5f5f;
-  --color-accent: #0f6cbd;
-  --color-accent-hover: #115ea3;
+  --color-surface-2: #f8f9fc;
+  --color-sunken: #eef1f6;
+  --color-hover: #eef1f6;
+  --color-selected: #e3edfc;
+  --color-line: #e3e7ee;
+  --color-line-strong: #cfd6e1;
+  --color-fg: #141922;
+  --color-muted: #5b6474;
+  --color-faint: #8a93a3;
+
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4fd8;
+  --color-accent-soft: #e6eeff;
   --color-on-accent: #ffffff;
-  --color-ok: #107c10;
-  --color-warn: #9d5d00;
-  --color-danger: #c42b1c;
-  --color-seg-done: #0f6cbd;
-  --color-seg-active: #4f9de8;
-  --color-seg-empty: #e6e6e6;
+
+  --color-ok: #15803d;
+  --color-ok-soft: #e3f6ea;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf1df;
+  --color-danger: #c62828;
+  --color-danger-soft: #fdeaea;
+
+  --color-seg-done: #2563eb;
+  --color-seg-active: #60a5fa;
+  --color-seg-empty: #e6eaf1;
+
+  --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-pop: 0 12px 32px rgb(16 24 40 / 0.18), 0 2px 6px rgb(16 24 40 / 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #202020;
-    --color-surface: #2b2b2b;
-    --color-surface-2: #272727;
-    --color-hover: #353535;
-    --color-selected: #1f3a5a;
-    --color-line: #3b3b3b;
-    --color-fg: #f0f0f0;
-    --color-muted: #b4b4b4;
-    --color-accent: #4cc2ff;
-    --color-accent-hover: #6bcfff;
-    --color-on-accent: #00213a;
-    --color-ok: #6ccb5f;
-    --color-warn: #fce100;
-    --color-danger: #ff99a4;
-    --color-seg-done: #4cc2ff;
-    --color-seg-active: #2b88c8;
-    --color-seg-empty: #3d3d3d;
+    --color-bg: #15181e;
+    --color-surface: #1d2129;
+    --color-surface-2: #191c23;
+    --color-sunken: #14171c;
+    --color-hover: #262b35;
+    --color-selected: #1e3354;
+    --color-line: #2b313c;
+    --color-line-strong: #3a4250;
+    --color-fg: #eef1f6;
+    --color-muted: #a7b0bf;
+    --color-faint: #7c8595;
+
+    --color-accent: #5b9bff;
+    --color-accent-hover: #7aaeff;
+    --color-accent-soft: #1d2d4a;
+    --color-on-accent: #06142b;
+
+    --color-ok: #4ade80;
+    --color-ok-soft: #15301f;
+    --color-warn: #fbbf24;
+    --color-warn-soft: #33270f;
+    --color-danger: #f87171;
+    --color-danger-soft: #3a1a1a;
+
+    --color-seg-done: #5b9bff;
+    --color-seg-active: #93c5fd;
+    --color-seg-empty: #2b313c;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-pop: 0 16px 40px rgb(0 0 0 / 0.5);
   }
 }
 
@@ -50,12 +79,28 @@ body {
   background: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.45;
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
-input, select, textarea { user-select: text; }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+input, select, textarea, code { user-select: text; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 6px; }
+::selection { background: var(--color-accent-soft); }
+
+/* Slim, quiet scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+.anim-fade-up { animation: fade-up 0.2s ease-out both; }
+.anim-pop-in { animation: pop-in 0.16s ease-out both; }
+.bar-stripes {
+  background-image: linear-gradient(45deg, rgb(255 255 255 / 0.22) 25%, transparent 25%, transparent 50%, rgb(255 255 255 / 0.22) 50%, rgb(255 255 255 / 0.22) 75%, transparent 75%);
+  background-size: 28px 28px;
+  animation: stripes 1s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }

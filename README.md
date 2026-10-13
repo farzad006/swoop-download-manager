@@ -8,7 +8,7 @@ DRM-protected streams (Netflix, Prime Video, Disney+, Spotify…) can't be downl
 
 ## Install
 
-1. Run `target\release\bundle\nsis\OurIDM_0.2.0_x64-setup.exe` (per-user, no admin). The **Browser integration** page lists the browsers Windows knows about; tick the ones you use.
+1. Run `target\release\bundle\nsis\OurIDM_0.3.0_x64-setup.exe` (per-user, no admin). The **Browser integration** page lists the browsers Windows knows about; tick the ones you use.
 2. When OurIDM starts, its **Connect your browsers** window walks through each ticked browser: *Open <browser>* (the extensions-page address is copied — press Ctrl+L, Ctrl+V, Enter), turn on Developer mode, then drag the extension folder that *Show the extension folder* selects onto the page. The card turns green when the extension reports in. Reopen it any time from Options → Browsers → *Set up browsers…*.
 3. Video sites need **yt-dlp** and **ffmpeg** on `PATH` (already the case on this PC: yt-dlp via pip, ffmpeg via winget). With *Options → Video → Keep yt-dlp up to date* on, OurIDM upgrades yt-dlp once a day (`pip install -U yt-dlp` for pip installs).
 
@@ -24,15 +24,17 @@ Why the extension step isn't fully automatic: Chrome, Edge, Opera and Brave only
 | Browser download takeover | Matching file types are cancelled in the browser and handed over with cookies, referrer and user-agent. Hold **Alt** while clicking to let the browser keep it. |
 | "Download this video" panel | Button over playing/hovered videos; pick quality (or audio-only MP3). |
 | Right-click menu | *Download with OurIDM*, *Download all links* (link grabber with type filters), *Download video from this page*. |
-| Download File Info dialog | Category, folder, name, description; **Start download** or **Download later** (main queue). |
-| Progress window | Speed, ETA, per-connection segment bar, pause/resume; turns into *Download complete*. |
+| Add URL | Paste into the bar at the top, press **Ctrl+V** anywhere in the window, or drag a link in from the browser. Copied links are offered automatically. |
+| Download file dialog | Name, folder and type chips; **Download now** or **Later** (adds to the queue). |
+| Download list | Cards with progress, speed and "about 2 min left"; the right button for each state (Pause, Resume, Open, Show in folder, Fix link, Try again). Search, sort, and select several with Ctrl/Shift for bulk actions; Del deletes, Ctrl+F searches, Ctrl+A selects all. |
+| Progress window | Big percentage, speed, time left, optional per-connection view; turns into *Download complete*. |
 | Dynamic segmentation | Up to 32 connections; idle connections take over half of the slowest range. |
 | Resume | Survives pauses, crashes and reboots; If-Range detects files changed on the server and restarts cleanly. |
-| Expired links | Right-click → *Refresh download address…*, keeps downloaded data. |
-| Queues & scheduler | Named queues, concurrency, start/stop times and days, then nothing / exit / sleep / shut down (1-minute warning; `shutdown /a` cancels). |
-| Clipboard monitor | Copying a link to a capturable file opens the dialog. |
-| Categories | Compressed, Documents, Music, Programs, Video, General — each with its own `Downloads\<Category>` folder. |
-| Speed limiter, proxy | Options → Connection (global KB/s limit; http/https/socks5 proxy or system proxy). |
+| Errors | Explained in plain words with a next step, e.g. an expired link shows **Fix link** (keeps downloaded data). |
+| Queues & scheduler | Named queues, files at a time, start/stop times and days with a plain-English summary, then nothing / close / sleep / shut down (1-minute warning; `shutdown /a` cancels). |
+| Categories | Videos, Music, Documents, Programs, Archives, Other — each with its own `Downloads\<Category>` folder. |
+| Settings | Sections with a one-line explanation per option: General, Downloads, Browsers, Speed, Videos, File types, Advanced. |
+| First run | A welcome tour: what OurIDM does, where files go, connecting browsers, how to download. Settings → General → *Welcome tour* shows it again. |
 | Tray | Closing the window keeps OurIDM in the tray; *Exit* pauses downloads first so they resume next time. |
 
 ## Layout
@@ -58,7 +60,7 @@ npm --prefix app run tauri dev                      # run the app with hot reloa
 npm --prefix app run installer                      # release build + NSIS installer
 ```
 
-UI preview without the Rust backend: `npm --prefix app run dev` and open http://localhost:1420 — a dev-only mock (`app/src/dev/mockBackend.ts`) supplies sample downloads; it's never included in builds.
+UI preview without the Rust backend: `npm --prefix app run dev` and open http://localhost:1420 (add `?onboarding=1` for the welcome tour, `?empty=1` for a new user, `?clip=1` for the copied-link hint) — a dev-only mock (`app/src/dev/mockBackend.ts`) supplies sample downloads; it's never included in builds.
 
 Extension end-to-end test (needs OurIDM running and `cargo run -p idm-testserver`): `BROWSER=edge node extension/e2e/chromium.e2e.mjs` (or `opera`). It drives a throwaway browser profile; Chrome 137+ ignores `--load-extension`, so Chrome can't be automated this way.
 

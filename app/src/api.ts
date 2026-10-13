@@ -77,6 +77,7 @@ export interface Settings {
   proxy: string | null;
   preferMp4: boolean;
   updateYtdlp: boolean;
+  onboarded: boolean;
 }
 
 export type AfterQueue = "nothing" | "exit" | "sleep" | "shutdown";
@@ -223,6 +224,9 @@ export const api = {
   /** Opens the browser and copies its extensions-page address (returned). */
   openBrowserSetup: (id: string) => invoke<string | null>("open_browser_setup", { id }),
   revealExtension: (id: string) => invoke<void>("reveal_extension", { id }),
+  showMain: () => invoke<void>("show_main"),
+  takeBrowserSelection: () => invoke<string[]>("take_browser_selection"),
+  clipboardLink: () => invoke<string | null>("clipboard_link"),
   openBrowserSetupWindow: (selected: string[] = []) => invoke<void>("open_browser_setup_window", { selected }),
 };
 
@@ -276,4 +280,48 @@ export function splitExt(name: string): [string, string] {
 
 export function joinPath(dir: string, name: string): string {
   return dir.endsWith("\\") || dir.endsWith("/") ? dir + name : `${dir}\\${name}`;
+}
+
+export type FixAction = "fix-link" | "retry" | "settings" | null;
+
+/** Turns engine/yt-dlp error text into plain language plus the most useful next step. */
+export function describeError(raw: string | null | undefined): { text: string; action: FixAction } {
+  const e = (raw ?? "").toLowerCase();
+  if (!e) return { text: "Something went wrong.", action: "retry" };
+  if (e.includes("link expired") || e.includes("http 401") || e.includes("http 403") || e.includes("http 410"))
+    return { text: "The link expired or needs you to be signed in.", action: "fix-link" };
+  if (e.includes("http 404")) return { text: "The file isn't on the server any more.", action: "fix-link" };
+  if (e.includes("drm")) return { text: "This video is copy-protected (DRM) and can't be downloaded.", action: null };
+  if (e.includes("isn't supported for video") || e.includes("unsupported url")) return { text: "This site isn't supported for video downloads.", action: null };
+  if (e.includes("yt-dlp was not found")) return { text: "Video downloads need yt-dlp, which wasn't found.", action: "settings" };
+  if (e.includes("disk error") || e.includes("space")) return { text: "Couldn't save the file. Check free space and the folder.", action: "retry" };
+  if (e.includes("http 5")) return { text: "The website's server had a problem.", action: "retry" };
+  if (e.includes("network") || e.includes("connection") || e.includes("timed out") || e.includes("dns"))
+    return { text: "Connection problem. Check your internet and try again.", action: "retry" };
+  return { text: raw!.replace(/^error:\s*/i, ""), action: "retry" };
+}
+
+/** "about 2 min left" style wording. */
+export function fmtEtaFriendly(secs: number | null | undefined): string {
+  if (secs == null || !isFinite(secs)) return "";
+  if (secs < 10) return "a few seconds left";
+  if (secs < 60) return `${secs} sec left`;
+  if (secs < 3600) return `about ${Math.round(secs / 60)} min left`;
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  return `about ${h} hr${m ? ` ${m} min` : ""} left`;
+}
+
+export function fmtRelative(unix: number | null | undefined): string {
+  if (!unix) return "";
+  const d = Date.now() / 1000 - unix;
+  if (d < 60) return "just now";
+  if (d < 3600) return `${Math.floor(d / 60)} min ago`;
+  const date = new Date(unix * 1000);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return `today ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  const y = new Date(today);
+  y.setDate(today.getDate() - 1);
+  if (date.toDateString() === y.toDateString()) return "yesterday";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

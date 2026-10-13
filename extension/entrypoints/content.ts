@@ -130,12 +130,12 @@ function createPanel() {
     <style>
       button {
         all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 6px;
-        height: 30px; padding: 0 12px 0 9px; border-radius: 6px; cursor: pointer;
+        height: 30px; padding: 0 12px 0 9px; border-radius: 8px; cursor: pointer;
         font: 600 12px/1 "Segoe UI", system-ui, sans-serif; color: #fff;
-        background: rgba(15,108,189,.94); box-shadow: 0 2px 10px rgba(0,0,0,.35);
+        background: rgba(37,99,235,.95); box-shadow: 0 2px 10px rgba(0,0,0,.35);
         transition: background .15s;
       }
-      button:hover { background: #115ea3; }
+      button:hover { background: #1d4fd8; }
       button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
       button[disabled] { opacity: .7; cursor: progress; }
       svg { width: 16px; height: 16px; flex: none; }

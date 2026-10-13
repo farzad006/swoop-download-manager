@@ -8,7 +8,7 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: "OurIDM Integration",
     description: "Sends downloads and web videos to the OurIDM download manager.",
-    version: "0.2.0",
+    version: "0.3.0",
     permissions: ["downloads", "nativeMessaging", "cookies", "webRequest", "contextMenus", "storage", "tabs"],
     host_permissions: ["<all_urls>"],
     icons: { 16: "icon/16.png", 32: "icon/32.png", 48: "icon/48.png", 128: "icon/128.png" },

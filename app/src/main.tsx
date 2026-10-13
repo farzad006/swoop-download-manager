@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import { ToastProvider } from "./components/ui";
 import Main from "./views/Main";
 import Progress from "./views/Progress";
 import Capture from "./views/Capture";
@@ -38,9 +39,14 @@ async function boot() {
   if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window && (window as any).__TAURI_INTERNALS__?.invoke)) {
     (await import("./dev/mockBackend")).installMockBackend();
   }
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  // Reuse the root if hot reload runs this file again during development.
+  const w = window as unknown as { __ouridmRoot?: ReactDOM.Root };
+  w.__ouridmRoot ??= ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+  w.__ouridmRoot.render(
     <React.StrictMode>
-      <Route />
+      <ToastProvider>
+        <Route />
+      </ToastProvider>
     </React.StrictMode>,
   );
 }

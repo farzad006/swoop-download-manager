@@ -5,7 +5,7 @@
   --muted: #5f5f5f;
   --line: #e0e0e0;
   --hover: #f0f0f0;
-  --accent: #0f6cbd;
+  --accent: #2563eb;
   --on-accent: #fff;
   --ok: #107c10;
   --bad: #c42b1c;
@@ -17,8 +17,8 @@
     --muted: #b4b4b4;
     --line: #3b3b3b;
     --hover: #353535;
-    --accent: #4cc2ff;
-    --on-accent: #00213a;
+    --accent: #5b9bff;
+    --on-accent: #06142b;
     --ok: #6ccb5f;
     --bad: #ff99a4;
   }

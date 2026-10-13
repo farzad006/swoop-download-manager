@@ -18,7 +18,10 @@
         "installMode": "currentUser",
         "installerHooks": "installer.nsh",
         "startMenuFolder": "OurIDM",
-        "template": "installer/installer.nsi"
+        "template": "installer/installer.nsi",
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "installerIcon": "icons/icon.ico"
       }
     }
   }

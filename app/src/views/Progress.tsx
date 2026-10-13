@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { CheckCircle2 } from "lucide-react";
-import { api, Download, fmtBytes, fmtEta, fmtSpeed, joinPath, percent, Progress as P } from "../api";
+import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, FolderOpen, Pause, Play, Wrench } from "lucide-react";
+import { api, describeError, Download, fmtBytes, fmtEtaFriendly, fmtSpeed, joinPath, percent, Progress as P } from "../api";
+import { FileTile } from "../categories";
 import { Button, ProgressBar, SegmentBar } from "../components/ui";
 
+/** Per-download window: big progress, speed, time left; becomes "Download complete". */
 export default function Progress({ id }: { id: number }) {
   const [d, setD] = useState<Download | null>(null);
   const [p, setP] = useState<P | null>(null);
-  const [details, setDetails] = useState(true);
+  const [details, setDetails] = useState(false);
   const [showComplete, setShowComplete] = useState(true);
   const win = getCurrentWindow();
 
@@ -28,104 +30,132 @@ export default function Progress({ id }: { id: number }) {
     if (status === "completed" && !showComplete) win.close();
   }, [status, showComplete, win]);
 
-  if (!d) return null;
-  const downloaded = p?.downloaded ?? d.downloaded;
-  const total = p?.total ?? d.size;
+  const downloaded = p?.downloaded ?? d?.downloaded ?? 0;
+  const total = p?.total ?? d?.size ?? null;
   const pc = percent(downloaded, total);
+  useEffect(() => {
+    if (d) win.setTitle(status === "completed" ? "Download complete" : pc != null ? `${pc.toFixed(0)}% · ${d.fileName}` : d.fileName).catch(() => {});
+  }, [d, pc, status, win]);
+
+  if (!d) return null;
   const running = status === "downloading" || status === "probing";
 
   if (status === "completed") {
     return (
-      <div className="h-full flex flex-col p-5 gap-3 bg-surface">
-        <div className="flex items-center gap-2 text-[15px] font-semibold">
-          <CheckCircle2 className="text-ok" size={22} /> Download complete
+      <div className="h-full flex flex-col bg-surface anim-fade-up">
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+          <div className="size-16 rounded-full bg-ok-soft text-ok grid place-items-center mb-4">
+            <CheckCircle2 size={34} />
+          </div>
+          <div className="text-[18px] font-semibold font-[family-name:var(--font-display)]">Download complete</div>
+          <div className="mt-1 font-medium truncate max-w-full" title={d.fileName}>{d.fileName}</div>
+          <div className="text-muted text-[12.5px] mt-0.5 truncate max-w-full" title={joinPath(d.destDir, d.fileName)}>
+            {fmtBytes(d.size)} · {d.destDir}
+          </div>
         </div>
-        <Info label="File" value={d.fileName} />
-        <Info label="Size" value={fmtBytes(d.size)} />
-        <Info label="Saved to" value={joinPath(d.destDir, d.fileName)} />
-        <Info label="Address" value={d.url} />
-        <div className="mt-auto flex justify-end gap-2">
-          <Button onClick={() => api.openFolder(id)}>Open folder</Button>
-          <Button primary autoFocus onClick={() => api.openFile(id).then(() => win.close())}>Open</Button>
-          <Button onClick={() => win.close()}>Close</Button>
+        <div className="flex gap-2 px-6 py-4 border-t border-line bg-surface-2">
+          <Button variant="ghost" onClick={() => win.close()}>Close</Button>
+          <div className="ml-auto flex gap-2">
+            <Button icon={FolderOpen} onClick={() => api.openFolder(id)}>Show in folder</Button>
+            <Button variant="primary" icon={ExternalLink} autoFocus onClick={() => api.openFile(id).then(() => win.close())}>Open</Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const title = pc != null ? `${pc.toFixed(0)}% ${d.fileName}` : d.fileName;
-  win.setTitle(title).catch(() => {});
+  const err = status === "failed" ? describeError(p?.error ?? d.error) : null;
+  const headline =
+    status === "failed"
+      ? err!.text
+      : status === "probing"
+        ? "Connecting…"
+        : p?.phase
+          ? "Finishing up (joining audio and video)…"
+          : running
+            ? fmtEtaFriendly(p?.etaSecs) || "Downloading…"
+            : status === "queued"
+              ? "Waiting in the queue"
+              : "Paused";
 
   return (
-    <div className="h-full flex flex-col px-4 py-3 gap-1.5 bg-surface overflow-hidden">
-      <Info label="Address" value={d.url} />
-      <Info
-        label="Status"
-        value={
-          status === "failed"
-            ? p?.error ?? d.error ?? "Error"
-            : status === "probing"
-              ? "Connecting…"
-              : p?.phase ?? (running ? "Receiving data…" : status === "queued" ? "Queued" : "Stopped")
-        }
-        danger={status === "failed"}
-      />
-      <Info label="File size" value={fmtBytes(total) || "Unknown"} />
-      <Info label="Downloaded" value={`${fmtBytes(downloaded)}${pc != null ? ` (${pc.toFixed(2)}%)` : ""}`} />
-      <Info label="Transfer rate" value={running ? fmtSpeed(p?.speed ?? 0) : ""} />
-      <Info label="Time left" value={running ? fmtEta(p?.etaSecs) : ""} />
-      <Info label="Resume capability" value={d.kind === "video" ? "Yes" : d.resumable ? "Yes" : "No"} />
-      <div className="shrink-0 pt-1">
-        <ProgressBar value={pc} />
+    <div className="h-full flex flex-col bg-surface">
+      <div className="flex items-center gap-3.5 px-6 pt-5">
+        <FileTile categoryKey={d.category} size={44} />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold truncate" title={d.fileName}>{d.fileName}</div>
+          <div className="text-muted text-[12.5px] truncate" title={d.url}>{new URL(d.url).hostname}</div>
+        </div>
       </div>
 
-      {details && d.kind === "http" && (
-        <div className="shrink min-h-0 flex flex-col gap-1.5 pt-1">
-          <SegmentBar segments={p?.segments ?? []} total={total} />
-          <div className="text-[12px] text-muted">
-            {p?.connections ?? 0} active connection{p?.connections === 1 ? "" : "s"} · {p?.segments.length ?? 0} segments
+      <div className="px-6 pt-5">
+        <div className="flex items-end justify-between mb-2">
+          <div className={`text-[15px] font-medium ${status === "failed" ? "text-danger" : ""}`}>
+            {status === "failed" && <AlertCircle size={16} className="inline -mt-0.5 mr-1.5" />}
+            {headline}
           </div>
-          <div className="min-h-0 max-h-[84px] overflow-auto border border-line rounded">
-            <table className="w-full text-[12px]">
-              <tbody>
+          {pc != null && <div className="text-[26px] font-semibold tabular-nums leading-none font-[family-name:var(--font-display)]">{pc.toFixed(0)}<span className="text-[15px] text-muted">%</span></div>}
+        </div>
+        <ProgressBar value={status === "probing" ? null : pc} height={10} tone={status === "failed" ? "danger" : running ? "accent" : "warn"} animated={running && pc != null} />
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          <Stat label="Downloaded" value={`${fmtBytes(downloaded) || "0 B"}${total ? ` of ${fmtBytes(total)}` : ""}`} />
+          <Stat label="Speed" value={running ? fmtSpeed(p?.speed ?? 0) || "—" : "—"} />
+          <Stat label="Can resume" value={d.kind === "video" || d.resumable ? "Yes" : "No"} />
+        </div>
+      </div>
+
+      {d.kind === "http" && (
+        <div className="px-6 pt-3 min-h-0 flex-1 flex flex-col">
+          <button className="flex items-center gap-1 text-muted hover:text-fg text-[12.5px] cursor-pointer self-start" onClick={() => setDetails(!details)} aria-expanded={details}>
+            <ChevronDown size={14} className={`transition-transform ${details ? "rotate-180" : ""}`} />
+            {details ? "Hide connections" : `Show connections (${p?.connections ?? 0} active)`}
+          </button>
+          {details && (
+            <div className="mt-2 space-y-2 min-h-0 flex flex-col anim-fade-up">
+              <SegmentBar segments={p?.segments ?? []} total={total} />
+              <div className="min-h-0 max-h-[92px] overflow-auto rounded-lg border border-line text-[12px]">
                 {(p?.segments ?? []).map((s, i) => (
-                  <tr key={i} className="odd:bg-surface-2">
-                    <td className="px-2 w-8 text-muted">{i + 1}</td>
-                    <td className="px-2">{fmtBytes(s.pos - s.start)} / {fmtBytes(s.end - s.start)}</td>
-                    <td className="px-2 text-muted">{s.pos >= s.end ? "Done" : running ? "Receiving data…" : ""}</td>
-                  </tr>
+                  <div key={i} className="flex gap-3 px-3 h-7 items-center odd:bg-surface-2">
+                    <span className="text-faint w-5">{i + 1}</span>
+                    <span className="tabular-nums flex-1">{fmtBytes(s.pos - s.start)} of {fmtBytes(s.end - s.start)}</span>
+                    <span className="text-muted">{s.pos >= s.end ? "Done" : running ? "Receiving" : "Waiting"}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="mt-auto shrink-0 flex justify-end gap-2 pt-2">
-        {d.kind === "http" && <Button onClick={() => setDetails(!details)}>{details ? "<< Hide details" : "Show details >>"}</Button>}
-        {running ? (
-          <Button primary onClick={() => api.pause(id)}>Pause</Button>
-        ) : (
-          <Button primary onClick={() => api.start(id)}>Resume</Button>
-        )}
+      <div className="mt-auto flex gap-2 px-6 py-4 border-t border-line bg-surface-2">
         <Button
+          variant="ghost"
           onClick={() => {
-            api.pause(id);
+            if (running) api.pause(id);
             win.close();
           }}
         >
-          Cancel
+          {running ? "Stop and close" : "Close"}
         </Button>
+        <div className="ml-auto">
+          {running ? (
+            <Button variant="primary" icon={Pause} onClick={() => api.pause(id)}>Pause</Button>
+          ) : err?.action === "fix-link" ? (
+            <Button variant="primary" icon={Wrench} onClick={() => api.showMain().then(() => win.close())}>Fix in OurIDM</Button>
+          ) : (
+            <Button variant="primary" icon={Play} onClick={() => api.start(id)}>{status === "failed" ? "Try again" : "Resume"}</Button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Info({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[130px_1fr] gap-2">
-      <span className="text-muted">{label}</span>
-      <span className={`truncate select-text ${danger ? "text-danger" : ""}`} title={value}>{value}</span>
+    <div className="rounded-xl bg-surface-2 border border-line px-3 py-2">
+      <div className="text-[11.5px] text-faint">{label}</div>
+      <div className="font-medium tabular-nums truncate">{value}</div>
     </div>
   );
 }

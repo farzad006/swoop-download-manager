@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api, DownloadCapture, fmtBytes, joinPath, MAIN_QUEUE } from "../api";
-import { Button, Field, FolderInput, TextInput } from "../components/ui";
+import { Clock, Download, Loader2, RotateCcw, TriangleAlert } from "lucide-react";
+import { api, DownloadCapture, fmtBytes, joinPath, MAIN_QUEUE, splitExt } from "../api";
+import { CATEGORIES, FileTile } from "../categories";
+import { Badge, Button, Field, FolderInput, TextInput } from "../components/ui";
 
-const CATEGORIES = ["General", "Compressed", "Documents", "Music", "Programs", "Video"];
-
-/** IDM's "Download File Info" dialog for a captured or pasted link. */
+/** Shown when a download is caught (browser, clipboard or pasted link). */
 export default function Capture({ token }: { token: string }) {
   const [cap, setCap] = useState<DownloadCapture | null>(null);
   const [fileName, setFileName] = useState("");
   const [destDir, setDestDir] = useState("");
   const [category, setCategory] = useState("General");
-  const [description, setDescription] = useState("");
   const [size, setSize] = useState<number | null>(null);
   const [resumable, setResumable] = useState(false);
   const [probing, setProbing] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const win = getCurrentWindow();
 
   const headers = (c: DownloadCapture): [string, string][] => {
@@ -53,8 +53,8 @@ export default function Capture({ token }: { token: string }) {
           }
           setSize(r.size ?? p.fileSize ?? null);
           setResumable(r.resumable);
-        } catch (e) {
-          setErr(`Couldn't contact the server: ${e}`);
+        } catch {
+          setWarning("Couldn't reach the website to check the file. You can still try downloading it.");
           if (!p.fileName) {
             const guess = decodeURIComponent(new URL(p.url).pathname.split("/").pop() || "download");
             setFileName(guess);
@@ -62,7 +62,7 @@ export default function Capture({ token }: { token: string }) {
           }
         }
       } catch (e) {
-        setErr(String(e));
+        setWarning(String(e));
       } finally {
         setProbing(false);
       }
@@ -76,6 +76,7 @@ export default function Capture({ token }: { token: string }) {
 
   const submit = async (start: boolean) => {
     if (!cap) return;
+    setBusy(true);
     try {
       await api.add(
         {
@@ -88,55 +89,97 @@ export default function Capture({ token }: { token: string }) {
           headers: headers(cap),
           kind: "http",
           queueId: start ? null : MAIN_QUEUE,
-          description,
           resumable,
         },
         start,
       );
       await close();
     } catch (e) {
-      setErr(String(e));
+      setWarning(String(e));
+      setBusy(false);
     }
   };
 
+  const changeCategory = async (cat: string) => {
+    setCategory(cat);
+    const s = await api.settings();
+    setDestDir(s.useCategoryFolders && cat !== "General" ? joinPath(s.downloadRoot, cat) : s.downloadRoot);
+  };
+
+  const [, ext] = splitExt(fileName);
+  let host = "";
+  try {
+    host = cap ? new URL(cap.url).hostname : "";
+  } catch {
+    /* ignore */
+  }
+
   return (
-    <div className="h-full flex flex-col p-4 gap-2.5 bg-surface" onKeyDown={(e) => e.key === "Escape" && close()}>
-      <Field label="URL">
-        <TextInput className="w-full" readOnly value={cap?.url ?? ""} />
-      </Field>
-      <Field label="Category">
-        <select
-          className="h-8 px-2 rounded-md border border-line bg-surface"
-          value={category}
-          onChange={async (e) => {
-            const cat = e.target.value;
-            setCategory(cat);
-            const s = await api.settings();
-            setDestDir(s.useCategoryFolders && cat !== "General" ? joinPath(s.downloadRoot, cat) : s.downloadRoot);
-          }}
-        >
-          {CATEGORIES.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Save to">
-        <FolderInput value={destDir} onChange={setDestDir} />
-      </Field>
-      <Field label="File name">
-        <TextInput className="w-full" value={fileName} onChange={(e) => setFileName(e.target.value)} />
-      </Field>
-      <Field label="Description">
-        <TextInput className="w-full" value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-      <div className="text-[12px] text-muted pl-[128px]">
-        {probing ? "Getting file information…" : `${size != null ? fmtBytes(size) : "Unknown size"}${resumable ? " · resumable" : " · resume not supported"}`}
-        {err && <div className="text-danger">{err}</div>}
+    <div className="h-full flex flex-col bg-surface" onKeyDown={(e) => e.key === "Escape" && close()}>
+      <div className="flex items-center gap-4 px-6 pt-5 pb-4">
+        <FileTile categoryKey={category} size={48} />
+        <div className="flex-1 min-w-0">
+          <div className="text-[15.5px] font-semibold truncate font-[family-name:var(--font-display)]" title={fileName}>
+            {probing && !fileName ? "Getting file details…" : fileName || "Download"}
+          </div>
+          <div className="flex items-center gap-2 mt-1 text-[12.5px] text-muted">
+            {probing ? (
+              <span className="flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Checking the file…</span>
+            ) : (
+              <>
+                <span className="font-medium text-fg">{size != null ? fmtBytes(size) : "Size unknown"}</span>
+                {host && <span className="truncate">from {host}</span>}
+                {resumable ? <Badge tone="ok" icon={RotateCcw}>Can pause & resume</Badge> : <Badge tone="warn">Can't resume</Badge>}
+              </>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="mt-auto flex justify-end gap-2">
-        <Button onClick={() => submit(false)} disabled={!cap || !fileName}>Download later</Button>
-        <Button primary autoFocus onClick={() => submit(true)} disabled={!cap || !fileName}>Start download</Button>
-        <Button onClick={close}>Cancel</Button>
+
+      <div className="flex-1 overflow-auto px-6 space-y-4">
+        <Field label="File name">
+          <TextInput className="w-full" value={fileName} onChange={(e) => setFileName(e.target.value)} aria-label="File name" />
+        </Field>
+        <Field label="Save to">
+          <FolderInput value={destDir} onChange={setDestDir} />
+        </Field>
+        <div>
+          <span className="block text-[12.5px] font-medium text-muted mb-1.5">Type</span>
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="File type">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.key}
+                role="radio"
+                aria-checked={category === c.key}
+                onClick={() => changeCategory(c.key)}
+                className={`h-8 px-3 rounded-full border text-[12.5px] flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  category === c.key ? "border-accent bg-accent-soft text-accent font-medium" : "border-line hover:bg-hover"
+                }`}
+              >
+                <c.icon size={14} /> {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {warning && (
+          <div className="flex gap-2 items-start p-3 rounded-lg bg-warn-soft text-[12.5px]">
+            <TriangleAlert size={15} className="text-warn shrink-0 mt-0.5" />
+            <span>{warning}</span>
+          </div>
+        )}
+        {ext === "" && !probing && <div className="text-[12px] text-faint">Tip: add a file extension (like .zip) so Windows knows how to open it.</div>}
+      </div>
+
+      <div className="flex items-center gap-2 px-6 py-4 border-t border-line bg-surface-2 mt-3">
+        <Button variant="ghost" onClick={close}>Cancel</Button>
+        <div className="ml-auto flex gap-2">
+          <Button icon={Clock} onClick={() => submit(false)} disabled={!cap || !fileName || busy} title="Adds it to the queue to download later">
+            Later
+          </Button>
+          <Button variant="primary" icon={Download} autoFocus onClick={() => submit(true)} disabled={!cap || !fileName || busy}>
+            Download now
+          </Button>
+        </div>
       </div>
     </div>
   );

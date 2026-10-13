@@ -25,7 +25,7 @@ export default defineBackground(() => {
     await sessionStore.set({ [`media:${tabId}`]: m });
     const n = Object.keys(m).length;
     action?.setBadgeText({ tabId, text: n ? String(n) : "" }).catch(() => {});
-    action?.setBadgeBackgroundColor({ tabId, color: "#0f6cbd" }).catch(() => {});
+    action?.setBadgeBackgroundColor({ tabId, color: "#2563eb" }).catch(() => {});
   }
 
   async function clearTab(tabId: number) {

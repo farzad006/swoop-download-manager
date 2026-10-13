@@ -479,3 +479,19 @@ pub fn reveal_extension(app: AppHandle, id: String) -> Res<()> {
 pub fn open_browser_setup_window(app: AppHandle, selected: Vec<String>) -> Res<()> {
     crate::windows::open_browsers(&app, &selected).map_err(err)
 }
+
+/// Browsers ticked in the installer (for the welcome screen), handed out once.
+#[tauri::command]
+pub fn take_browser_selection(mgr: Mgr) -> Vec<String> {
+    std::mem::take(&mut *mgr.browser_selection.lock().unwrap())
+}
+
+/// The clipboard's text if it's a single http(s) link, for the "you copied a link" hint.
+#[tauri::command]
+pub fn clipboard_link(app: AppHandle) -> Option<String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let text = app.clipboard().read_text().ok()?;
+    let t = text.trim();
+    let ok = t.len() < 4096 && !t.contains(char::is_whitespace) && url::Url::parse(t).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
+    ok.then(|| t.to_string())
+}

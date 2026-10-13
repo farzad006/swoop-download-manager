@@ -54,7 +54,10 @@ const settings: Settings = {
   proxy: null,
   preferMp4: true,
   updateYtdlp: true,
-};
+  connectedBrowsers: {},
+  // Preview the welcome tour with ?onboarding=1
+  onboarded: !location.search.includes("onboarding"),
+} as Settings;
 
 const queues: Queue[] = [
   { id: 1, name: "Main download queue", maxConcurrent: 2, schedule: { startTime: "02:00", stopTime: "07:00", days: [1, 2, 3, 4, 5] }, afterDone: "nothing", running: false },
@@ -82,11 +85,20 @@ export function installMockBackend() {
     (cmd, args: any) => {
       switch (cmd) {
         case "list_downloads":
-          return downloads;
+          return location.search.includes("empty") ? [] : downloads;
         case "get_download":
           return downloads.find((d) => d.id === args.id) ?? null;
         case "get_settings":
-          return settings;
+          return structuredClone(settings);
+        case "save_settings":
+          Object.assign(settings, args.settings);
+          return null;
+        case "take_browser_selection":
+          return ["chrome", "edge"];
+        case "clipboard_link":
+          return location.search.includes("clip") ? "https://releases.example.org/tools/setup-2.4.1.exe" : null;
+        case "capture_url":
+          return null;
         case "list_queues":
           return queues;
         case "tool_status":

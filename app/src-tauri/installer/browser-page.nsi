@@ -97,12 +97,12 @@ Function OurIdmBrowserPage
     Call OurIdmDetectBrowsers
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "Browser integration" "Choose the browsers OurIDM should catch downloads and videos in."
+  !insertmacro MUI_HEADER_TEXT "Which browsers do you use?" "OurIDM can pick up downloads and videos from them."
   nsDialogs::Create 1018
   Pop $R0
   ${IfThen} $(^RTL) = 1 ${|} nsDialogs::SetRTL $(^RTL) ${|}
 
-  ${NSD_CreateLabel} 0 0 100% 34u "OurIDM works through a small browser extension. Browsers only let their own stores add extensions automatically, so when OurIDM starts it will walk you through a one-time step for each browser you tick here (about 20 seconds each)."
+  ${NSD_CreateLabel} 0 0 100% 34u "Tick the browsers you use. When OurIDM opens, it will show you how to connect each one. It takes about 20 seconds per browser, and you only do it once."
   Pop $R1
 
   !insertmacro OurIdmBox $OurIdmCbChrome $OurIdmHasChrome $OurIdmSelChrome 42u "Google Chrome"
