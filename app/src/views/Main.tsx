@@ -34,6 +34,7 @@ import { Badge, Button, Check, IconButton, Kbd, Menu, MenuItem, Modal, ProgressB
 import { SettingsDialog } from "./Options";
 import { SchedulerDialog } from "./Scheduler";
 import Onboarding from "./Onboarding";
+import { Logo } from "../components/Logo";
 
 type StatusKey = "all" | "active" | "queued" | "paused" | "completed" | "failed";
 type Filter = { kind: "status"; key: StatusKey } | { kind: "category"; key: string } | { kind: "queue"; id: number };
@@ -508,9 +509,7 @@ function Header({
   return (
     <header className="flex items-center gap-4 px-4 h-[62px] shrink-0">
       <div className="flex items-center gap-2.5 w-[200px] shrink-0 pl-1">
-        <span className="size-8 rounded-xl bg-accent text-on-accent grid place-items-center shadow-sm">
-          <DownloadIcon size={18} strokeWidth={2.4} />
-        </span>
+        <Logo size={34} className="drop-shadow-sm" />
         <span className="text-[16px] font-semibold font-[family-name:var(--font-display)]">OurIDM</span>
       </div>
       <form
@@ -764,9 +763,7 @@ function DownloadCard({
 function WelcomeEmpty({ connected }: { connected: boolean }) {
   return (
     <div className="anim-fade-up max-w-[560px] mx-auto mt-10 text-center">
-      <div className="size-16 mx-auto rounded-2xl bg-accent-soft text-accent grid place-items-center mb-4">
-        <DownloadIcon size={30} />
-      </div>
+      <Logo size={64} className="mx-auto mb-4 drop-shadow-md" />
       <h2 className="text-[19px] font-semibold font-[family-name:var(--font-display)]">Your downloads will appear here</h2>
       <p className="text-muted mt-1">Three easy ways to start:</p>
       <div className="mt-5 grid gap-2.5 text-left">

@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Clipboard, Download, FolderOpen, Gauge, MousePoi
 import { api, joinPath, Settings } from "../api";
 import { Button, FolderInput, Kbd, Switch, useToast } from "../components/ui";
 import { BrowserList } from "./Browsers";
+import { Logo } from "../components/Logo";
 
 const STEPS = ["Welcome", "Folder", "Browsers", "Ready"];
 
@@ -50,9 +51,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         <div key={step} className="anim-fade-up bg-surface border border-line rounded-2xl shadow-[var(--shadow-pop)] overflow-hidden">
           {step === 0 && (
             <div className="p-8 text-center">
-              <div className="size-16 mx-auto rounded-2xl bg-accent text-on-accent grid place-items-center shadow-lg mb-5">
-                <Download size={32} strokeWidth={2.2} />
-              </div>
+              <Logo size={84} className="mx-auto mb-5 drop-shadow-lg" />
               <h1 className="text-[24px] font-semibold font-[family-name:var(--font-display)]">Welcome to OurIDM</h1>
               <p className="text-muted mt-1.5 text-[14px]">Faster, safer downloads, plus videos from websites. Setup takes about a minute.</p>
               <div className="grid grid-cols-3 gap-3 mt-7 text-left">

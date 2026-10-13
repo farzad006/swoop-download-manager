@@ -21,8 +21,13 @@ def font(name, size):
         return ImageFont.load_default()
 
 
+LOGO = Path(__file__).resolve().parents[2] / "branding" / "png" / "logo-256.png"
+
+
 def logo(size):
-    """White download arrow on a rounded blue tile."""
+    """The app logo (rendered by app/scripts/render-logo.mjs), else a drawn fallback."""
+    if LOGO.is_file():
+        return Image.open(LOGO).convert("RGBA").resize((size, size), Image.LANCZOS)
     s = size * 4  # supersample for smooth edges
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -37,7 +42,7 @@ def logo(size):
 # Sidebar: deep blue gradient, logo, name, tagline.
 W, H = 164, 314
 side = Image.new("RGB", (W, H))
-top, bottom = (29, 78, 216), (15, 23, 42)
+top, bottom = (67, 56, 202), (15, 23, 42)
 px = side.load()
 for y in range(H):
     t = y / (H - 1)
