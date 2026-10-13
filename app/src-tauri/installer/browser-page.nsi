@@ -1,3 +1,7 @@
+; Tauri's template leaves the installer's Company field empty; code signing
+; (SignPath) expects consistent metadata on every signed file.
+VIAddVersionKey "CompanyName" "${MANUFACTURER}"
+
 ; ---- Swoop: "Browser integration" page --------------------------------------
 ; Lists the browsers Windows knows about (Clients\StartMenuInternet), ticked by
 ; default. The choice is saved by NSIS_HOOK_POSTINSTALL (installer.nsh) and

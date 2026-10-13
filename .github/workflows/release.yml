@@ -43,6 +43,19 @@ jobs:
       - name: Build installer (also builds swoop-host and the extension)
         run: npm --prefix app run installer
 
+      - name: Check file details (code signing requires matching name and version)
+        shell: pwsh
+        run: |
+          $v = $env:TAG.TrimStart("v")
+          $files = "target/release/Swoop.exe", "target/release/swoop-host.exe", "target/release/bundle/nsis/Swoop_${v}_x64-setup.exe"
+          foreach ($f in $files) {
+            $info = (Get-Item $f).VersionInfo
+            "{0}: {1} {2} ({3})" -f $f, $info.ProductName, $info.ProductVersion, $info.CompanyName
+            if ($info.ProductName -ne "Swoop" -or $info.ProductVersion -notlike "$v*" -or $info.CompanyName -ne "Ali Studio") {
+              throw "$f has the wrong file details"
+            }
+          }
+
       - name: Collect release files
         shell: pwsh
         run: |

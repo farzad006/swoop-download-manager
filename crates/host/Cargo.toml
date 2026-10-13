@@ -5,3 +5,7 @@ edition.workspace = true
 
 [dependencies]
 serde_json = "1.0.154"
+
+[build-dependencies]
+serde_json = "1.0.154"
+winresource = "0.1.34"
