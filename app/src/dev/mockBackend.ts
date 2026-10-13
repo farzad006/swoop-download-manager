@@ -108,6 +108,8 @@ export function installMockBackend() {
           const category = ext === "mp4" ? "Video" : ext === "mp3" ? "Music" : ext === "zip" ? "Compressed" : "General";
           return { category, destDir: category === "General" ? settings.downloadRoot : `${settings.downloadRoot}\\${category}` };
         }
+        case "about":
+          return { version: "1.0.0", projectUrl: "https://github.com/", supportUrl: "https://www.amazon.in/", supportEmail: "farzad006@gmail.com" };
         case "list_browsers":
           // Fresh objects each call, like real IPC (same refs would skip React updates).
           return structuredClone(browsers);

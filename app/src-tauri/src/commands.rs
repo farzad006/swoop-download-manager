@@ -495,3 +495,35 @@ pub fn clipboard_link(app: AppHandle) -> Option<String> {
     let ok = t.len() < 4096 && !t.contains(char::is_whitespace) && url::Url::parse(t).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
     ok.then(|| t.to_string())
 }
+
+pub const PROJECT_URL: &str = "https://github.com/OWNER/swoop-download-manager";
+/// Amazon Pay eGift Card (amazon.in), delivered by email to SUPPORT_EMAIL.
+pub const SUPPORT_URL: &str = "https://www.amazon.in/Amazon-Pay-E-mail-Gift-Card/dp/B01LTHZYN0";
+pub const SUPPORT_EMAIL: &str = "farzad006@gmail.com";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AboutInfo {
+    pub version: &'static str,
+    pub project_url: &'static str,
+    pub support_url: &'static str,
+    pub support_email: &'static str,
+}
+
+#[tauri::command]
+pub fn about() -> AboutInfo {
+    AboutInfo { version: env!("CARGO_PKG_VERSION"), project_url: PROJECT_URL, support_url: SUPPORT_URL, support_email: SUPPORT_EMAIL }
+}
+
+/// Opens one of Swoop's own links in the default browser (fixed list, no arbitrary URLs).
+#[tauri::command]
+pub fn open_link(app: AppHandle, which: String) -> Res<()> {
+    let url = match which.as_str() {
+        "project" => PROJECT_URL.to_string(),
+        "issues" => format!("{PROJECT_URL}/issues"),
+        "releases" => format!("{PROJECT_URL}/releases"),
+        "support" => SUPPORT_URL.to_string(),
+        _ => return Err("unknown link".into()),
+    };
+    app.opener().open_url(url, None::<&str>).map_err(err)
+}

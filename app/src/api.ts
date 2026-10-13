@@ -225,6 +225,8 @@ export const api = {
   openBrowserSetup: (id: string) => invoke<string | null>("open_browser_setup", { id }),
   revealExtension: (id: string) => invoke<void>("reveal_extension", { id }),
   showMain: () => invoke<void>("show_main"),
+  about: () => invoke<{ version: string; projectUrl: string; supportUrl: string; supportEmail: string }>("about"),
+  openLink: (which: "project" | "issues" | "releases" | "support") => invoke<void>("open_link", { which }),
   takeBrowserSelection: () => invoke<string[]>("take_browser_selection"),
   clipboardLink: () => invoke<string | null>("clipboard_link"),
   openBrowserSetupWindow: (selected: string[] = []) => invoke<void>("open_browser_setup_window", { selected }),

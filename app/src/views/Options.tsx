@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Download, Film, Gauge, Puzzle, Settings as Cog, SlidersHorizontal, FileType2, XCircle } from "lucide-react";
+import { Bug, CheckCircle2, Copy, Download, ExternalLink, Film, Gauge, Gift, GitBranch, Heart, Puzzle, Settings as Cog, SlidersHorizontal, FileType2, XCircle } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { api, BrowserStatus, joinPath, Settings, ToolStatus } from "../api";
 import { Button, FolderInput, Modal, Select, SettingRow, Switch, TextInput, useToast } from "../components/ui";
 
@@ -11,6 +12,7 @@ const SECTIONS = [
   { key: "videos", label: "Videos", icon: Film },
   { key: "files", label: "File types", icon: FileType2 },
   { key: "advanced", label: "Advanced", icon: SlidersHorizontal },
+  { key: "about", label: "About", icon: Heart },
 ] as const;
 type Section = (typeof SECTIONS)[number]["key"];
 
@@ -219,6 +221,8 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
             </div>
           )}
 
+          {tab === "about" && <About />}
+
           {tab === "advanced" && (
             <>
               <SettingRow title="Proxy" description="Leave empty to use Windows' proxy settings. Example: http://127.0.0.1:8080 or socks5://127.0.0.1:1080">
@@ -248,6 +252,59 @@ function ToolLine({ name, hint, path }: { name: string; hint: string; path: stri
       {path ? <CheckCircle2 size={16} className="text-ok" /> : <XCircle size={16} className="text-danger" />}
       <span className="font-medium w-16">{name}</span>
       <span className="text-muted flex-1 truncate" title={path ?? undefined}>{path ? hint : "not found — video downloads won't work"}</span>
+    </div>
+  );
+}
+
+function About() {
+  const toast = useToast();
+  const [info, setInfo] = useState<{ version: string; supportEmail: string } | null>(null);
+  useEffect(() => {
+    api.about().then(setInfo);
+  }, []);
+  if (!info) return null;
+  const copyEmail = () => navigator.clipboard.writeText(info.supportEmail).then(() => toast("Email copied", "ok"));
+  return (
+    <div className="py-5 space-y-5">
+      <div className="flex items-center gap-4">
+        <Logo size={64} className="drop-shadow-md" />
+        <div>
+          <div className="text-[20px] font-semibold font-[family-name:var(--font-display)]">Swoop</div>
+          <div className="text-muted">Version {info.version} · made by Ali Studio</div>
+          <div className="text-faint text-[12.5px]">Free and open source (MIT license)</div>
+        </div>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <Button size="sm" icon={GitBranch} onClick={() => api.openLink("project")}>Project on GitHub</Button>
+        <Button size="sm" icon={Download} onClick={() => api.openLink("releases")}>Check for updates</Button>
+        <Button size="sm" icon={Bug} onClick={() => api.openLink("issues")}>Report a problem</Button>
+      </div>
+      <div className="rounded-2xl border border-line bg-gradient-to-br from-accent-soft to-surface p-5">
+        <div className="flex items-center gap-2 font-semibold text-[15px]">
+          <Gift size={18} className="text-accent" /> Enjoying Swoop?
+        </div>
+        <p className="text-muted mt-1.5">
+          Swoop is free. If it saves you time, you can say thanks with an Amazon Pay gift card (amazon.in), sent by email to:
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <code className="px-3 h-9 leading-9 rounded-lg border border-line bg-surface select-all font-medium">{info.supportEmail}</code>
+          <Button size="sm" icon={Copy} className="h-9" onClick={copyEmail}>Copy</Button>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <Button
+            variant="primary"
+            icon={ExternalLink}
+            onClick={async () => {
+              await navigator.clipboard.writeText(info.supportEmail).catch(() => {});
+              await api.openLink("support");
+              toast("Email copied. Paste it as the recipient on Amazon.", "ok");
+            }}
+          >
+            Send a gift card
+          </Button>
+          <span className="text-[12px] text-faint">Opens amazon.in; any amount you like. Thank you!</span>
+        </div>
+      </div>
     </div>
   );
 }

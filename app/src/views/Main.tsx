@@ -10,6 +10,7 @@ import {
   Download as DownloadIcon,
   ExternalLink,
   FolderOpen,
+  Heart,
   Layers,
   Link2,
   ListOrdered,
@@ -292,6 +293,10 @@ export default function Main() {
           setDialog("settings");
         }}
         onScheduler={() => setDialog("scheduler")}
+        onSupport={() => {
+          setSettingsTab("about");
+          setDialog("settings");
+        }}
       />
       <ClipboardHint knownUrls={all.map((d) => d.url)} onAdd={addLink} />
 
@@ -494,6 +499,7 @@ function Header({
   onPauseAll,
   onSettings,
   onScheduler,
+  onSupport,
 }: {
   totalSpeed: number;
   activeCount: number;
@@ -501,6 +507,7 @@ function Header({
   onPauseAll: () => void;
   onSettings: () => void;
   onScheduler: () => void;
+  onSupport: () => void;
 }) {
   const [url, setUrl] = useState("");
   const submit = () => {
@@ -538,6 +545,7 @@ function Header({
             <IconButton icon={PauseCircle} label="Pause all downloads" onClick={onPauseAll} />
           </>
         )}
+        <IconButton icon={Heart} label="Support Swoop" tone="danger" onClick={onSupport} />
         <IconButton icon={CalendarClock} label="Queues and schedule" onClick={onScheduler} />
         <IconButton icon={SettingsIcon} label="Settings" onClick={onSettings} />
       </div>

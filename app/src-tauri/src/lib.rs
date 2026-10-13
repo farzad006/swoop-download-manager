@@ -189,6 +189,8 @@ pub fn run() {
             commands::open_browser_setup_window,
             commands::take_browser_selection,
             commands::clipboard_link,
+            commands::about,
+            commands::open_link,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Swoop");
