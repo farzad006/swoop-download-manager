@@ -1,0 +1,43 @@
+[package]
+name = "ouridm"
+version = "0.1.0"
+description = "OurIDM download manager"
+authors = ["farza"]
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "ouridm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+idm-engine = { version = "0.1.0", path = "../../crates/engine" }
+tauri-plugin-dialog = "2.8.2"
+tauri-plugin-notification = "2.6.0"
+tauri-plugin-single-instance = "2.5.3"
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-clipboard-manager = "2.4.2"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tokio = { version = "1.53.2", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+anyhow = "1.0.104"
+url = "2.5.8"
+log = "0.4.34"
+tokio-util = "0.7.20"
+winreg = "0.56.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+

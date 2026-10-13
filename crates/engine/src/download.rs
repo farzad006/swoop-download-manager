@@ -146,8 +146,12 @@ impl DownloadHandle {
 
 /// Starts (or resumes, if a matching `.part.meta` exists) a download.
 pub fn start(req: Request, opts: Options) -> DownloadHandle {
+    start_with_cancel(req, opts, CancellationToken::new())
+}
+
+/// Like [`start`], pausing when `cancel` fires.
+pub fn start_with_cancel(req: Request, opts: Options, cancel: CancellationToken) -> DownloadHandle {
     let (tx, rx) = watch::channel(Progress::initial());
-    let cancel = CancellationToken::new();
     let c = cancel.clone();
     let task = tokio::spawn(async move {
         let r = run(&req, &opts, &tx, &c).await;
