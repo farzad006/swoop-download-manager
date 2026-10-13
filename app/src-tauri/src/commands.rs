@@ -496,7 +496,7 @@ pub fn clipboard_link(app: AppHandle) -> Option<String> {
     ok.then(|| t.to_string())
 }
 
-pub const PROJECT_URL: &str = "https://github.com/OWNER/swoop-download-manager";
+pub const PROJECT_URL: &str = "https://github.com/farzad006/swoop-download-manager";
 /// Amazon Pay eGift Card (amazon.in), delivered by email to SUPPORT_EMAIL.
 pub const SUPPORT_URL: &str = "https://www.amazon.in/Amazon-Pay-E-mail-Gift-Card/dp/B01LTHZYN0";
 pub const SUPPORT_EMAIL: &str = "farzad006@gmail.com";

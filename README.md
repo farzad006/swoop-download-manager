@@ -7,9 +7,9 @@
 **Fast, resumable downloads and web videos for Windows.**<br>
 Free and open source, by Ali Studio.
 
-<a href="https://github.com/OWNER/swoop-download-manager/releases/latest/download/Swoop-Setup-x64.exe"><img src="https://img.shields.io/badge/Download_for_Windows-2563EB?style=for-the-badge&logo=windows11&logoColor=white" alt="Download Swoop for Windows" height="44"></a>
+<a href="https://github.com/farzad006/swoop-download-manager/releases/latest/download/Swoop-Setup-x64.exe"><img src="https://img.shields.io/badge/Download_for_Windows-2563EB?style=for-the-badge&logo=windows11&logoColor=white" alt="Download Swoop for Windows" height="44"></a>
 
-[![Latest release](https://img.shields.io/github/v/release/OWNER/swoop-download-manager?color=4F46E5)](https://github.com/OWNER/swoop-download-manager/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/farzad006/swoop-download-manager?color=4F46E5)](https://github.com/farzad006/swoop-download-manager/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7C3AED)](LICENSE)
 ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-2563EB)
 [![Say thanks](https://img.shields.io/badge/Say_thanks-Amazon_gift_card-F59E0B)](#-like-swoop)
@@ -32,7 +32,7 @@ Free and open source, by Ali Studio.
 
 ## Download and install
 
-1. **[Download Swoop-Setup-x64.exe](https://github.com/OWNER/swoop-download-manager/releases/latest/download/Swoop-Setup-x64.exe)** (about 4 MB) and run it. It installs for your user only, so no admin rights are needed.
+1. **[Download Swoop-Setup-x64.exe](https://github.com/farzad006/swoop-download-manager/releases/latest/download/Swoop-Setup-x64.exe)** (about 4 MB) and run it. It installs for your user only, so no admin rights are needed.
 2. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. Swoop isn't code-signed yet (certificates are expensive), so Windows doesn't recognise the publisher.
 3. Tick the browsers you use on the **Which browsers do you use?** page.
 4. Swoop opens with a short **welcome tour** that helps you choose a download folder and connect your browsers (about 20 seconds each).
