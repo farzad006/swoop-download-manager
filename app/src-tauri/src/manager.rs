@@ -222,7 +222,14 @@ impl Manager {
 
     async fn run_video(&self, rec: &DownloadRecord, cancel: CancellationToken) -> Result<Finish> {
         let s = self.settings();
-        let stem = Path::new(&rec.file_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| rec.file_name.clone());
+        // yt-dlp skips a download whose file already exists, so pick a free name first.
+        let stem = unique_video_stem(&self.db(), rec);
+        let current = Path::new(&rec.file_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        if stem != current {
+            let ext = Path::new(&rec.file_name).extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "mp4".into());
+            let _ = self.db().set_file(rec.id, &format!("{stem}.{ext}"), None);
+            self.emit_record(rec.id);
+        }
         let job = VideoJob {
             url: &rec.url,
             headers: &rec.headers,
@@ -536,6 +543,35 @@ fn rand_token() -> u64 {
     h.finish()
 }
 
+/// The name (without extension) a video download should save under. If a
+/// finished file or another unfinished download already uses it, " (1)",
+/// " (2)", … is added, so downloading the same title again makes a new file
+/// instead of yt-dlp skipping it. A download keeps its own name when resuming
+/// (its partial files don't count as taken).
+pub fn unique_video_stem(db: &Db, rec: &DownloadRecord) -> String {
+    let dir = Path::new(&rec.dest_dir);
+    let stem_of = |name: &str| Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| name.to_string());
+    let own = stem_of(&rec.file_name);
+    let others: HashSet<String> = db
+        .list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| d.id != rec.id && d.status != Status::Completed && Path::new(&d.dest_dir) == dir)
+        .map(|d| stem_of(&d.file_name))
+        .collect();
+    let has_any_file = |stem: &str| {
+        let prefix = format!("{stem}.");
+        std::fs::read_dir(dir).map(|rd| rd.flatten().any(|e| e.file_name().to_string_lossy().starts_with(&prefix))).unwrap_or(false)
+    };
+    let taken = |stem: &str, is_own: bool| {
+        others.contains(stem) || video::find_output(dir, stem).is_some() || (!is_own && has_any_file(stem))
+    };
+    if !taken(&own, true) {
+        return own;
+    }
+    (1..).map(|n| format!("{own} ({n})")).find(|c| !taken(c, false)).unwrap()
+}
+
 /// Before 1.0.2, a title with characters like ’ or – made Swoop miss yt-dlp's
 /// "saved to" line, so finished videos were marked failed. Marks those
 /// completed when the finished file is on disk.
@@ -603,6 +639,76 @@ mod tests {
             description: String::new(),
             resumable: true,
         }
+    }
+
+    #[test]
+    fn same_title_again_gets_a_numbered_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let dir = tmp.path();
+
+        // Nothing there yet: the name is used as is.
+        let first = db.insert(&video("abc.mp4", dir), Status::Paused).unwrap();
+        assert_eq!(unique_video_stem(&db, &db.get(first).unwrap().unwrap()), "abc");
+
+        // abc.mp4 finished; downloading "abc" again must not reuse the name.
+        std::fs::write(dir.join("abc.mp4"), b"done").unwrap();
+        db.set_status(first, Status::Completed, None).unwrap();
+        let second = db.insert(&video("abc.mp4", dir), Status::Paused).unwrap();
+        assert_eq!(unique_video_stem(&db, &db.get(second).unwrap().unwrap()), "abc (1)");
+
+        // A third copy while the second is still unfinished: (1) is taken by it.
+        db.set_file(second, "abc (1).mp4", None).unwrap();
+        let third = db.insert(&video("abc.mp4", dir), Status::Paused).unwrap();
+        assert_eq!(unique_video_stem(&db, &db.get(third).unwrap().unwrap()), "abc (2)");
+
+        // Resuming keeps its own name even though its partial files exist.
+        std::fs::write(dir.join("abc (1).f137.mp4.part"), b"half").unwrap();
+        assert_eq!(unique_video_stem(&db, &db.get(second).unwrap().unwrap()), "abc (1)");
+
+        // Someone else's leftover partial files also make a name taken.
+        std::fs::write(dir.join("xyz.f22.mp4.part"), b"orphan").unwrap();
+        let fresh = db.insert(&video("xyz.mp4", dir), Status::Paused).unwrap();
+        assert_eq!(unique_video_stem(&db, &db.get(fresh).unwrap().unwrap()), "xyz", "own name: partials may be its own resume");
+    }
+
+    /// With yt-dlp: downloading the same title twice used to skip the second
+    /// one ("already downloaded"). Offline (local test server); skipped when
+    /// yt-dlp isn't installed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn same_title_twice_saves_two_files() {
+        if video::find_binary("yt-dlp").is_none() {
+            eprintln!("yt-dlp not installed; skipping");
+            return;
+        }
+        let srv = swoop_testserver::spawn().await;
+        let url = srv.url("/file/200000?name=clip.mp4&type=video/mp4");
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let mut saved = Vec::new();
+        for _ in 0..2 {
+            let id = db.insert(&video("abc.mp4", tmp.path()), Status::Paused).unwrap();
+            let stem = unique_video_stem(&db, &db.get(id).unwrap().unwrap());
+            db.set_file(id, &format!("{stem}.mp4"), None).unwrap();
+            let job = VideoJob {
+                url: &url,
+                headers: &[],
+                cookies_file: None,
+                dest_dir: tmp.path(),
+                stem: &stem,
+                choice: "best",
+                prefer_mp4: true,
+                connections: 4,
+                speed_limit_kbps: 0,
+                proxy: None,
+            };
+            let path = video::download(job, CancellationToken::new(), |_| {}).await.unwrap().unwrap();
+            db.set_status(id, Status::Completed, None).unwrap();
+            saved.push(path);
+        }
+        assert_ne!(saved[0], saved[1], "the second download needs its own file");
+        assert!(saved.iter().all(|p| p.is_file()), "{saved:?}");
+        assert!(saved[1].file_name().unwrap().to_string_lossy().starts_with("abc (1)"), "{saved:?}");
     }
 
     #[test]
