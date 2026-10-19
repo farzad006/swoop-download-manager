@@ -125,7 +125,8 @@ export default defineBackground(() => {
   }
 
   // ---- video capture ----
-  async function sendVideo(tabId: number, pageUrl: string, title: string, extraSrc?: string) {
+  const prefetched = new Map<string, number>();
+  async function sendVideo(tabId: number, pageUrl: string, title: string, extraSrc?: string, type: "video" | "video-prefetch" = "video") {
     const m = await loadTab(tabId);
     const streams = Object.values(m);
     if (extraSrc && /^https?:/i.test(extraSrc) && !streams.some((s) => s.url === extraSrc)) {
@@ -133,7 +134,7 @@ export default defineBackground(() => {
     }
     const urls = [pageUrl, ...streams.map((s) => s.url)];
     return sendNative({
-      type: "video",
+      type,
       pageUrl,
       title,
       streams,
@@ -148,6 +149,15 @@ export default defineBackground(() => {
       case "bypass":
         bypassUntil = Date.now() + 3000;
         return;
+      case "video-prefetch": {
+        // The button just appeared on a video: let Swoop look it up ahead of the click.
+        // Once per page every 10 minutes; Swoop isn't started just for this.
+        const key = `${tabId}|${msg.pageUrl}`;
+        if (tabId == null || Date.now() - (prefetched.get(key) ?? 0) < 600_000) return;
+        prefetched.set(key, Date.now());
+        sendVideo(tabId, msg.pageUrl, msg.title, msg.src, "video-prefetch");
+        return;
+      }
       case "video-click":
         if (tabId != null) return sendVideo(tabId, msg.pageUrl, msg.title, msg.src);
         return;

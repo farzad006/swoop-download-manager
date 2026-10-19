@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Clock, Download, Film, Loader2, Music, ShieldAlert } from "lucide-react";
 import { api, fmtBytes, MAIN_QUEUE, VideoChoice, VideoInfoResult } from "../api";
-import { Badge, Button, Field, FolderInput, TextInput } from "../components/ui";
+import { Badge, Button, Check, Field, FolderInput, TextInput } from "../components/ui";
 
 function safeName(s: string) {
   return s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/, "").slice(0, 180) || "video";
@@ -28,6 +28,7 @@ export default function Video({ token }: { token: string }) {
   const [name, setName] = useState("");
   const [dir, setDir] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const win = getCurrentWindow();
 
@@ -65,6 +66,11 @@ export default function Video({ token }: { token: string }) {
     setBusy(true);
     try {
       await api.addVideo({ token, sourceUrl: res.sourceUrl, choice: picked, fileName: name + ext, destDir: dir, start, queueId: start ? null : MAIN_QUEUE });
+      if (remember) {
+        // Next time the video button downloads straight away in this quality.
+        const s = await api.settings();
+        await api.saveSettings({ ...s, videoClickAction: picked });
+      }
       await close();
     } catch (e) {
       setErr(String(e));
@@ -151,6 +157,11 @@ export default function Video({ token }: { token: string }) {
             <Field label="Save to">
               <FolderInput value={dir} onChange={setDir} />
             </Field>
+            <Check
+              checked={remember}
+              onChange={setRemember}
+              label="Always download in this quality without asking (change it in Settings → Videos)"
+            />
           </div>
         </>
       ) : (

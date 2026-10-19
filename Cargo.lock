@@ -4113,7 +4113,7 @@ dependencies = [
 
 [[package]]
 name = "swoop"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4122,6 +4122,7 @@ dependencies = [
  "serde",
  "serde_json",
  "swoop-engine",
+ "swoop-testserver",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

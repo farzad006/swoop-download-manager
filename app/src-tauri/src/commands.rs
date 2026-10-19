@@ -226,41 +226,14 @@ fn video_capture(mgr: &Manager, token: &str) -> Res<capture::VideoCapture> {
 #[tauri::command]
 pub async fn video_info(mgr: Mgr<'_>, token: String) -> Res<VideoInfoResult> {
     let cap = video_capture(&mgr, &token)?;
-    let cookies_file = if cap.cookies.is_empty() {
-        None
-    } else {
-        let dir = mgr.data_dir.join("cookies");
-        std::fs::create_dir_all(&dir).map_err(err)?;
-        let p = dir.join(format!("{token}.txt"));
-        std::fs::write(&p, video::netscape_cookies(&cap.cookies)).map_err(err)?;
-        Some(p.to_string_lossy().into_owned())
+    // The download later copies this token's cookie file (see add_video).
+    let cookies_file = mgr.cookies_file(&token, &cap.cookies);
+    // Usually instant: the lookup ran in advance when the video button appeared.
+    let (info, source_url, error) = match mgr.video_info(&cap, cookies_file.as_deref()).await {
+        Ok((info, url)) => (Some(info), Some(url), None),
+        Err(e) => (None, None, Some(e)),
     };
-    let headers = cap.headers();
-    let mut candidates = vec![cap.page_url.clone()];
-    candidates.extend(cap.streams.iter().filter(|s| s.kind == "hls" || s.kind == "dash").map(|s| s.url.clone()));
-    let mut error = None;
-    for url in candidates {
-        match video::info(&url, &headers, cookies_file.as_deref()).await {
-            Ok(info) => {
-                return Ok(VideoInfoResult {
-                    info: Some(info),
-                    source_url: Some(url),
-                    error: None,
-                    title: cap.title.clone(),
-                    page_url: cap.page_url.clone(),
-                    streams: cap.streams.clone(),
-                });
-            }
-            Err(e) => {
-                let drm = e.contains("DRM");
-                error = Some(e);
-                if drm {
-                    break;
-                }
-            }
-        }
-    }
-    Ok(VideoInfoResult { info: None, source_url: None, error, title: cap.title, page_url: cap.page_url, streams: cap.streams })
+    Ok(VideoInfoResult { info, source_url, error, title: cap.title, page_url: cap.page_url, streams: cap.streams })
 }
 
 #[tauri::command]

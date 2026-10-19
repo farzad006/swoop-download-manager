@@ -66,6 +66,7 @@ pub async fn spawn_on(bind: &str) -> TestServer {
     let app = Router::new()
         .route("/file/{size}", get(serve))
         .route("/page", get(page))
+        .route("/video-page", get(video_page))
         .with_state(stats.clone());
     let listener = tokio::net::TcpListener::bind(bind).await.expect("bind test server");
     let addr = listener.local_addr().unwrap();
@@ -142,6 +143,17 @@ async fn serve(
 }
 
 /// A page with a download link and a video, for browser-extension tests.
+/// A video page whose title has characters outside the Windows code page, the
+/// kind of title that made finished videos look failed before 1.0.2.
+async fn video_page() -> axum::response::Html<&'static str> {
+    axum::response::Html(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Friend\u{2019}s clip \u{2013} test</title></head><body>\
+         <h1>Video page</h1>\
+         <video id=\"v\" width=\"640\" height=\"360\" muted preload=\"auto\" src=\"/file/3000000?name=clip.mp4&type=video/mp4\"></video>\
+         </body></html>",
+    )
+}
+
 async fn page() -> axum::response::Html<&'static str> {
     axum::response::Html(
         r#"<!doctype html><html><head><title>Swoop test page</title></head><body>

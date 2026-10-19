@@ -118,6 +118,12 @@ pub struct Settings {
     pub update_ytdlp: bool,
     /// The first-run welcome has been completed.
     pub onboarded: bool,
+    /// Look up a video's qualities as soon as its "Download this video" button
+    /// appears, so the dialog opens instantly.
+    pub video_prefetch: bool,
+    /// What the video button does: "ask" (quality dialog) or a remembered
+    /// quality ("best", "h1080", "h720", "audio", …) downloaded without asking.
+    pub video_click_action: String,
     /// Browser id → unix time the extension last said hello from it.
     pub connected_browsers: std::collections::BTreeMap<String, i64>,
 }
@@ -146,6 +152,8 @@ impl Default for Settings {
             update_ytdlp: true,
             connected_browsers: Default::default(),
             onboarded: false,
+            video_prefetch: true,
+            video_click_action: "ask".into(),
         }
     }
 }

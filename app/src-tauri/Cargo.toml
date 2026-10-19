@@ -1,6 +1,6 @@
 [package]
 name = "swoop"
-version = "1.0.1"
+version = "1.0.2"
 description = "Swoop download manager by Ali Studio"
 authors = ["Ali Studio"]
 edition.workspace = true
@@ -38,6 +38,7 @@ tokio-util = "0.7.20"
 winreg = "0.56.0"
 
 [dev-dependencies]
+swoop-testserver = { path = "../../tools/testserver" }
 tempfile = "3.27.0"
 
 

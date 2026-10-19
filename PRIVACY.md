@@ -7,7 +7,7 @@ Swoop has **no accounts, no ads, no analytics and no telemetry**. Ali Studio rec
 ## When Swoop connects to the internet
 
 1. **Downloads you start.** This covers clicking a download in your browser, pasting a link, accepting a copied-link suggestion, or a queue or schedule you set up. Swoop connects to that website and sends what the site needs to give you the file: the address and, for downloads that come from your browser, the same cookies, referrer and browser name your browser would have sent.
-2. **Web videos.** When you use *Download this video*, Swoop runs the free tool [yt-dlp](https://github.com/yt-dlp/yt-dlp), which contacts that website to find and download the video.
+2. **Web videos.** When you use *Download this video*, Swoop runs the free tool [yt-dlp](https://github.com/yt-dlp/yt-dlp), which contacts that website to find and download the video. If *Get videos ready in advance* is on (it is by default), this lookup already happens when the *Download this video* button appears on a video you're watching, so the quality list opens instantly. It only contacts the site you're already on. Turn it off in **Settings → Videos**.
 3. **Keeping the video downloader up to date.** Once a day, if *Keep the video downloader up to date* is on (it is by default), Swoop asks yt-dlp to check for a newer version. That contacts the Python package index (pypi.org) or GitHub, depending on how yt-dlp was installed. No personal information is sent. Turn it off in **Settings → Videos**.
 4. **Links you choose to open.** Buttons like *Project on GitHub*, *Report a problem* and *Send a gift card* open those web pages in your browser.
 

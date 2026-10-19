@@ -124,6 +124,16 @@ pub async fn handle_browser(mgr: &Arc<Manager>, v: Value) -> Value {
             }
             json!({ "ok": true, "app": "Swoop", "version": env!("CARGO_PKG_VERSION") })
         }
+        Some("video-prefetch") => {
+            // The "Download this video" button just appeared: look the video up now.
+            match serde_json::from_value::<VideoCapture>(v) {
+                Ok(cap) => {
+                    mgr.prefetch_video(cap);
+                    json!({ "ok": true })
+                }
+                Err(e) => json!({ "ok": false, "error": e.to_string() }),
+            }
+        }
         Some("config") => {
             let s = mgr.settings();
             json!({
@@ -146,6 +156,13 @@ pub async fn handle_browser(mgr: &Arc<Manager>, v: Value) -> Value {
 }
 
 pub async fn capture(mgr: &Arc<Manager>, p: Pending) {
+    if let Pending::Video(cap) = &p {
+        let action = mgr.settings().video_click_action;
+        if action != "ask" && !action.is_empty() {
+            mgr.quick_video(cap.clone(), action);
+            return;
+        }
+    }
     if let Pending::Download(d) = &p {
         if !mgr.settings().show_capture_dialog && !d.force_dialog {
             if let Err(e) = quick_add(mgr, d).await {

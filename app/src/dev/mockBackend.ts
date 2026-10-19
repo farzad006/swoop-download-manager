@@ -55,6 +55,8 @@ const settings: Settings = {
   preferMp4: true,
   updateYtdlp: true,
   connectedBrowsers: {},
+  videoPrefetch: true,
+  videoClickAction: "ask",
   // Preview the welcome tour with ?onboarding=1
   onboarded: !location.search.includes("onboarding"),
 } as Settings;

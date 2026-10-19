@@ -78,6 +78,9 @@ export interface Settings {
   preferMp4: boolean;
   updateYtdlp: boolean;
   onboarded: boolean;
+  videoPrefetch: boolean;
+  /** "ask", or a remembered quality ("best", "h1080", "h720", "audio", ...). */
+  videoClickAction: string;
 }
 
 export type AfterQueue = "nothing" | "exit" | "sleep" | "shutdown";

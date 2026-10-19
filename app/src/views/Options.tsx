@@ -175,6 +175,20 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
 
           {tab === "videos" && (
             <>
+              <SettingRow title="When you click “Download this video”" description="Ask shows the quality list. A fixed quality starts the download straight away.">
+                <Select value={s.videoClickAction || "ask"} onChange={(e) => set("videoClickAction", e.target.value)} aria-label="When you click Download this video">
+                  <option value="ask">Ask me each time</option>
+                  <option value="best">Best available quality</option>
+                  <option value="h2160">4K (2160p)</option>
+                  <option value="h1080">Full HD (1080p)</option>
+                  <option value="h720">HD (720p)</option>
+                  <option value="h480">Standard (480p)</option>
+                  <option value="audio">Audio only (MP3)</option>
+                </Select>
+              </SettingRow>
+              <SettingRow title="Get videos ready in advance" description="When the video button appears, Swoop looks up the video's qualities in the background so clicking opens them instantly.">
+                <Switch label="Get videos ready in advance" checked={s.videoPrefetch} onChange={(v) => set("videoPrefetch", v)} />
+              </SettingRow>
               <SettingRow title="Prefer MP4" description="Plays on every device and TV. Turn off to allow WebM/MKV, which some sites use for top quality.">
                 <Switch label="Prefer MP4" checked={s.preferMp4} onChange={(v) => set("preferMp4", v)} />
               </SettingRow>

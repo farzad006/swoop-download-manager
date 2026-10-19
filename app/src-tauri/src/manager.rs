@@ -8,7 +8,7 @@ use swoop_engine::{CancellationToken, Options, RateLimiter, Request, Status};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
-use crate::capture::Pending;
+use crate::capture::{Pending, VideoCapture};
 use crate::categories::{category_for, folder_for};
 use crate::db::Db;
 use crate::model::{AfterQueue, DownloadRecord, Kind, NewDownload, ProgressEvent, Queue, Settings};
@@ -32,12 +32,17 @@ pub struct Manager {
     pub pending: Mutex<HashMap<String, Pending>>,
     /// Browsers ticked in the installer, handed to the first-run welcome.
     pub browser_selection: Mutex<Vec<String>>,
+    /// Video lookups, remembered for 10 minutes (see `prefetch_video`).
+    pub video_cache: video::InfoCache,
+    /// At most two lookups run in advance at once.
+    prefetch_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl Manager {
     pub fn new(app: AppHandle, data_dir: PathBuf) -> Result<Arc<Self>> {
         std::fs::create_dir_all(&data_dir)?;
         let db = Db::open(&data_dir.join("swoop.db"))?;
+        repair_finished_videos(&db);
         let mut settings = db.settings()?;
         if settings.download_root.is_empty() {
             settings.download_root = default_download_root().to_string_lossy().into_owned();
@@ -54,6 +59,8 @@ impl Manager {
             global_limiter,
             pending: Mutex::new(HashMap::new()),
             browser_selection: Mutex::new(Vec::new()),
+            video_cache: video::InfoCache::new(Duration::from_secs(600)),
+            prefetch_slots: Arc::new(tokio::sync::Semaphore::new(2)),
         }))
     }
 
@@ -421,6 +428,89 @@ impl Manager {
         }
     }
 
+    /// Writes a Netscape cookies file for yt-dlp; `None` when there are no cookies.
+    pub fn cookies_file(&self, name: &str, cookies: &[video::BrowserCookie]) -> Option<String> {
+        if cookies.is_empty() {
+            return None;
+        }
+        let dir = self.data_dir.join("cookies");
+        std::fs::create_dir_all(&dir).ok()?;
+        let p = dir.join(format!("{name}.txt"));
+        std::fs::write(&p, video::netscape_cookies(cookies)).ok()?;
+        Some(p.to_string_lossy().into_owned())
+    }
+
+    /// A page's video info, from the cache when it was looked up in advance
+    /// (or waiting for that lookup if it's still running).
+    pub async fn video_info(&self, cap: &VideoCapture, cookies_file: Option<&str>) -> video::InfoResult {
+        let manifests: Vec<String> = cap.streams.iter().filter(|s| s.kind == "hls" || s.kind == "dash").map(|s| s.url.clone()).collect();
+        let headers = cap.headers();
+        self.video_cache.get_or_fetch(&cap.page_url, || video::extract(&cap.page_url, &manifests, &headers, cookies_file)).await
+    }
+
+    /// Looks a video up in the background as soon as its "Download this video"
+    /// button appears, so a click opens the quality list instantly.
+    pub fn prefetch_video(self: &Arc<Self>, cap: VideoCapture) {
+        if !self.settings().video_prefetch || self.video_cache.is_known(&cap.page_url) {
+            return;
+        }
+        let Ok(permit) = self.prefetch_slots.clone().try_acquire_owned() else { return };
+        let me = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let _permit = permit;
+            let cookies = me.cookies_file(&format!("prefetch-{:x}", rand_token()), &cap.cookies);
+            let _ = me.video_info(&cap, cookies.as_deref()).await;
+            if let Some(c) = cookies {
+                let _ = std::fs::remove_file(c);
+            }
+        });
+    }
+
+    /// "Download this video" with a remembered quality: starts the download
+    /// without the dialog. Falls back to the dialog if the video can't be read,
+    /// so the user still sees why (and any directly downloadable files).
+    pub fn quick_video(self: &Arc<Self>, cap: VideoCapture, choice: String) {
+        let me = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let cookies = me.cookies_file(&format!("dl-{:x}", rand_token()), &cap.cookies);
+            match me.video_info(&cap, cookies.as_deref()).await {
+                Ok((info, source)) => {
+                    let ext = if choice == "audio" { "mp3" } else { "mp4" };
+                    let file_name = swoop_engine::sanitize_file_name(&format!("{}.{ext}", info.title.chars().take(180).collect::<String>()));
+                    let (category, dir) = me.placement_for(&file_name);
+                    let added = me.add(
+                        NewDownload {
+                            url: source,
+                            page_url: Some(cap.page_url.clone()),
+                            file_name,
+                            dest_dir: dir.to_string_lossy().into_owned(),
+                            category,
+                            size: None,
+                            headers: cap.headers(),
+                            kind: Kind::Video,
+                            video_format: Some(choice),
+                            cookies_file: cookies,
+                            queue_id: None,
+                            description: info.title,
+                            resumable: true,
+                        },
+                        true,
+                    );
+                    if let Err(e) = added {
+                        log::warn!("quick video download failed to start: {e}");
+                    }
+                }
+                Err(_) => {
+                    if let Some(c) = cookies {
+                        let _ = std::fs::remove_file(c);
+                    }
+                    let token = me.put_pending(Pending::Video(cap));
+                    let _ = windows::open_dialog(&me.app, "video", &token);
+                }
+            }
+        });
+    }
+
     pub fn put_pending(&self, p: Pending) -> String {
         let token = format!("{:x}", rand_token());
         self.pending.lock().unwrap().insert(token.clone(), p);
@@ -446,6 +536,27 @@ fn rand_token() -> u64 {
     h.finish()
 }
 
+/// Before 1.0.2, a title with characters like ’ or – made Swoop miss yt-dlp's
+/// "saved to" line, so finished videos were marked failed. Marks those
+/// completed when the finished file is on disk.
+pub fn repair_finished_videos(db: &Db) -> usize {
+    let mut fixed = 0;
+    for d in db.list().unwrap_or_default() {
+        let lost_report = d.error.as_deref().is_some_and(|e| e.contains("finished without reporting a file"));
+        if d.kind != Kind::Video || d.status != Status::Failed || !lost_report {
+            continue;
+        }
+        let stem = Path::new(&d.file_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let Some(path) = video::find_output(Path::new(&d.dest_dir), &stem) else { continue };
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(d.file_name.clone());
+        if db.set_file(d.id, &name, None).is_ok() && db.set_progress(d.id, size, Some(size)).is_ok() && db.set_status(d.id, Status::Completed, None).is_ok() {
+            fixed += 1;
+        }
+    }
+    fixed
+}
+
 pub fn default_download_root() -> PathBuf {
     std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\")).join("Downloads")
 }
@@ -469,5 +580,49 @@ fn after_queue(app: &AppHandle, action: AfterQueue) {
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn video(name: &str, dir: &Path) -> NewDownload {
+        NewDownload {
+            url: "https://example.com/watch".into(),
+            page_url: None,
+            file_name: name.into(),
+            dest_dir: dir.to_string_lossy().into_owned(),
+            category: "Video".into(),
+            size: None,
+            headers: vec![],
+            kind: Kind::Video,
+            video_format: Some("best".into()),
+            cookies_file: None,
+            queue_id: None,
+            description: String::new(),
+            resumable: true,
+        }
+    }
+
+    #[test]
+    fn finished_videos_wrongly_marked_failed_are_repaired() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let on_disk = db.insert(&video("Friend\u{2019}s mom.mp4", tmp.path()), Status::Paused).unwrap();
+        std::fs::write(tmp.path().join("Friend\u{2019}s mom.mp4"), vec![7u8; 1234]).unwrap();
+        db.set_status(on_disk, Status::Failed, Some("yt-dlp finished without reporting a file")).unwrap();
+        let missing = db.insert(&video("Not there.mp4", tmp.path()), Status::Paused).unwrap();
+        db.set_status(missing, Status::Failed, Some("yt-dlp finished without reporting a file")).unwrap();
+        let other_error = db.insert(&video("Other.mp4", tmp.path()), Status::Paused).unwrap();
+        std::fs::write(tmp.path().join("Other.mp4"), b"x").unwrap();
+        db.set_status(other_error, Status::Failed, Some("This video is DRM-protected")).unwrap();
+
+        assert_eq!(repair_finished_videos(&db), 1);
+        let fixed = db.get(on_disk).unwrap().unwrap();
+        assert_eq!(fixed.status, Status::Completed);
+        assert_eq!((fixed.downloaded, fixed.size), (1234, Some(1234)));
+        assert_eq!(db.get(missing).unwrap().unwrap().status, Status::Failed, "no file, stays failed");
+        assert_eq!(db.get(other_error).unwrap().unwrap().status, Status::Failed, "other errors untouched");
     }
 }

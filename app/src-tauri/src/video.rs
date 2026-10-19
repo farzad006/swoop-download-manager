@@ -32,6 +32,9 @@ fn ytdlp() -> Result<PathBuf, String> {
 fn command(exe: &Path) -> Command {
     let mut c = Command::new(exe);
     c.creation_flags(CREATE_NO_WINDOW).stdin(Stdio::null()).kill_on_drop(true);
+    // Python writes to pipes in the Windows code page by default; titles with
+    // characters outside it (’ – …) must come through intact.
+    c.env("PYTHONIOENCODING", "utf-8").env("PYTHONUTF8", "1");
     c
 }
 
@@ -152,6 +155,68 @@ pub fn parse_info(v: &Value) -> VideoInfo {
     }
 }
 
+/// What a page's video info lookup produced: the info and the URL yt-dlp could
+/// read (the page itself or a sniffed stream manifest).
+pub type InfoResult = Result<(VideoInfo, String), String>;
+
+/// Remembers video lookups for a while so the quality dialog opens instantly
+/// when the lookup already ran in advance (or is still running: callers wait
+/// for that same lookup instead of starting another yt-dlp).
+pub struct InfoCache {
+    ttl: std::time::Duration,
+    entries: std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, std::sync::Arc<tokio::sync::OnceCell<InfoResult>>)>>,
+}
+
+impl InfoCache {
+    pub fn new(ttl: std::time::Duration) -> Self {
+        Self { ttl, entries: Default::default() }
+    }
+
+    pub fn is_known(&self, key: &str) -> bool {
+        self.entries.lock().unwrap().get(key).is_some_and(|(at, _)| at.elapsed() < self.ttl)
+    }
+
+    pub async fn get_or_fetch<F, Fut>(&self, key: &str, fetch: F) -> InfoResult
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = InfoResult>,
+    {
+        let cell = {
+            let mut m = self.entries.lock().unwrap();
+            m.retain(|_, (at, _)| at.elapsed() < self.ttl);
+            m.entry(key.to_string()).or_insert_with(|| (std::time::Instant::now(), Default::default())).1.clone()
+        };
+        let result = cell.get_or_init(fetch).await.clone();
+        if result.is_err() {
+            // Don't remember failures: the next click should try again.
+            let mut m = self.entries.lock().unwrap();
+            if m.get(key).is_some_and(|(_, c)| std::sync::Arc::ptr_eq(c, &cell)) {
+                m.remove(key);
+            }
+        }
+        result
+    }
+}
+
+/// Looks up a page's video: the page first, then any stream manifests the
+/// extension spotted. Stops early on DRM (nothing else will work).
+pub async fn extract(page_url: &str, manifests: &[String], headers: &[(String, String)], cookies_file: Option<&str>) -> InfoResult {
+    let mut error = String::from("No downloadable video was found on this page.");
+    for url in std::iter::once(page_url.to_string()).chain(manifests.iter().cloned()) {
+        match info(&url, headers, cookies_file).await {
+            Ok(i) => return Ok((i, url)),
+            Err(e) => {
+                let drm = e.contains("DRM");
+                error = e;
+                if drm {
+                    break;
+                }
+            }
+        }
+    }
+    Err(error)
+}
+
 /// yt-dlp arguments selecting the quality the user picked.
 pub fn format_args(choice: &str, prefer_mp4: bool) -> Vec<String> {
     let sort = |res: Option<&str>| {
@@ -224,7 +289,7 @@ pub async fn download(
         .args(common_args(job.headers, job.cookies_file))
         .args(["-N", &job.connections.clamp(1, 16).to_string()])
         .args(["--newline", "--progress", "--progress-template", "download:IDMP%(progress)j"])
-        .args(["--print", "after_move:IDMF%(filepath)s", "--no-mtime", "--continue"])
+        .args(["--print", "after_move:IDMF%(filepath)j", "--no-mtime", "--continue"])
         .arg("-o")
         .arg(&template);
     if let Some(ff) = find_binary("ffmpeg") {
@@ -243,16 +308,16 @@ pub async fn download(
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let err_task = tokio::spawn(async move {
-        let mut buf = String::new();
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(l)) = lines.next_line().await {
-            buf.push_str(&l);
-            buf.push('\n');
+        let mut out = String::new();
+        let (mut reader, mut buf) = (BufReader::new(stderr), Vec::new());
+        while let Some(l) = next_line(&mut reader, &mut buf).await {
+            out.push_str(&l);
+            out.push('\n');
         }
-        buf
+        out
     });
 
-    let mut lines = BufReader::new(stdout).lines();
+    let (mut reader, mut buf) = (BufReader::new(stdout), Vec::new());
     let mut final_path = None;
     let (mut done_bytes, mut cur_file, mut cur_total) = (0u64, String::new(), 0u64);
     loop {
@@ -262,9 +327,9 @@ pub async fn download(
                 let _ = child.wait().await;
                 return Ok(None);
             }
-            l = lines.next_line() => l,
+            l = next_line(&mut reader, &mut buf) => l,
         };
-        let Ok(Some(line)) = line else { break };
+        let Some(line) = line else { break };
         if let Some(json) = line.strip_prefix("IDMP") {
             let Ok(p) = serde_json::from_str::<Value>(json) else { continue };
             let file = p["filename"].as_str().unwrap_or("").to_string();
@@ -285,7 +350,9 @@ pub async fn download(
                 phase: finished.then(|| "Processing".to_string()),
             });
         } else if let Some(path) = line.strip_prefix("IDMF") {
-            final_path = Some(PathBuf::from(path.trim()));
+            // A JSON string (`%(filepath)j`): ASCII-only, so any title survives.
+            let path = path.trim();
+            final_path = Some(PathBuf::from(serde_json::from_str::<String>(path).unwrap_or_else(|_| path.to_string())));
         }
     }
     let status = child.wait().await.map_err(|e| e.to_string())?;
@@ -293,7 +360,39 @@ pub async fn download(
     if !status.success() {
         return Err(friendly_error(&stderr));
     }
-    final_path.map(Some).ok_or_else(|| "yt-dlp finished without reporting a file".into())
+    // yt-dlp succeeded; if its "saved to" line still went missing, look for the file.
+    final_path
+        .filter(|p| p.is_file())
+        .or_else(|| find_output(job.dest_dir, job.stem))
+        .map(Some)
+        .ok_or_else(|| "yt-dlp finished without reporting a file".into())
+}
+
+/// Next line of a child's output. Bytes that aren't valid UTF-8 are replaced
+/// rather than ending the stream: one odd character in a title used to stop
+/// Swoop listening before yt-dlp reported the saved file.
+async fn next_line<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R, buf: &mut Vec<u8>) -> Option<String> {
+    buf.clear();
+    match r.read_until(b'\n', buf).await {
+        Ok(0) | Err(_) => None,
+        Ok(_) => Some(String::from_utf8_lossy(buf).trim_end_matches(['\r', '\n']).to_string()),
+    }
+}
+
+/// The finished file `<stem>.<ext>` in `dir` (newest if several), ignoring
+/// yt-dlp's partial and intermediate files.
+pub fn find_output(dir: &Path, stem: &str) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter(|e| {
+            let p = e.path();
+            let ext = p.extension().map(|x| x.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            p.file_stem().is_some_and(|s| s.to_string_lossy() == stem) && !matches!(ext.as_str(), "part" | "ytdl" | "temp" | "")
+        })
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
 }
 
 async fn kill_tree(pid: Option<u32>) {
@@ -399,6 +498,90 @@ mod tests {
     #[test]
     fn drm_errors_are_explained() {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
+    }
+
+    fn fake_info(title: &str) -> VideoInfo {
+        VideoInfo {
+            title: title.into(),
+            thumbnail: None,
+            duration: None,
+            extractor: String::new(),
+            webpage_url: String::new(),
+            is_live: false,
+            choices: vec![],
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cache_runs_one_lookup_for_simultaneous_requests() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let cache = std::sync::Arc::new(InfoCache::new(std::time::Duration::from_secs(600)));
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let lookup = |cache: std::sync::Arc<InfoCache>, calls: std::sync::Arc<AtomicUsize>| async move {
+            cache
+                .get_or_fetch("https://site/watch?v=1", || async {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    Ok((fake_info("A"), "https://site/watch?v=1".to_string()))
+                })
+                .await
+        };
+        // An advance lookup and a click arriving while it's still running.
+        let (a, b) = tokio::join!(lookup(cache.clone(), calls.clone()), lookup(cache.clone(), calls.clone()));
+        assert_eq!(a.unwrap().0.title, "A");
+        assert_eq!(b.unwrap().0.title, "A");
+        // A later click is answered from the cache.
+        lookup(cache.clone(), calls.clone()).await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "only one yt-dlp lookup should run");
+        assert!(cache.is_known("https://site/watch?v=1"));
+    }
+
+    #[tokio::test]
+    async fn cache_forgets_failures_and_expires() {
+        let cache = InfoCache::new(std::time::Duration::from_millis(100));
+        let failed = cache.get_or_fetch("k", || async { Err("network down".to_string()) }).await;
+        assert!(failed.is_err());
+        assert!(!cache.is_known("k"), "a failure must not stick");
+        let ok = cache.get_or_fetch("k", || async { Ok((fake_info("B"), "k".to_string())) }).await;
+        assert_eq!(ok.unwrap().0.title, "B");
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        assert!(!cache.is_known("k"), "entries expire");
+    }
+
+    /// Titles with characters outside the Windows code page (’ – and the
+    /// replacement character some sites put in titles) used to make Swoop lose
+    /// yt-dlp's "saved to" line and mark finished downloads as failed. Runs
+    /// offline against the local test server; skipped when yt-dlp isn't installed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn titles_with_special_characters_complete() {
+        if find_binary("yt-dlp").is_none() {
+            eprintln!("yt-dlp not installed; skipping");
+            return;
+        }
+        let srv = swoop_testserver::spawn().await;
+        let size = 300_000u64;
+        let url = srv.url(&format!("/file/{size}?name=clip.mp4&type=video/mp4"));
+        let dir = tempfile::tempdir().unwrap();
+        let stem = "Friend\u{2019}s mom \u{2013} broken \u{FFFD} title";
+        let job = VideoJob {
+            url: &url,
+            headers: &[],
+            cookies_file: None,
+            dest_dir: dir.path(),
+            stem,
+            choice: "best",
+            prefer_mp4: true,
+            connections: 4,
+            speed_limit_kbps: 0,
+            proxy: None,
+        };
+        let path = download(job, CancellationToken::new(), |_| {})
+            .await
+            .expect("a finished download must be reported as finished")
+            .expect("not cancelled");
+        assert!(path.is_file(), "reported path must exist: {}", path.display());
+        assert!(path.file_name().unwrap().to_string_lossy().starts_with("Friend\u{2019}s mom"), "{}", path.display());
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), size);
     }
 
     /// Network + yt-dlp + ffmpeg. `cargo test -p swoop -- --ignored public_hls`
