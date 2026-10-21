@@ -1,6 +1,6 @@
 [package]
 name = "swoop"
-version = "1.0.3"
+version = "1.0.4"
 description = "Swoop download manager by Ali Studio"
 authors = ["Ali Studio"]
 edition.workspace = true

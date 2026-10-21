@@ -90,10 +90,100 @@ pub fn friendly_error(stderr: &str) -> String {
     }
 }
 
+/// A connection that dropped or stalled mid-request, as opposed to an answer
+/// from the site ("video not found", DRM, unsupported, …).
+pub fn is_transient(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    [
+        "unexpected_eof",
+        "eof occurred in violation of protocol",
+        "connection reset",
+        "connection aborted",
+        "remote end closed connection",
+        "timed out",
+        "temporary failure in name resolution",
+        "connection refused",
+        "transporterror",
+    ]
+    .iter()
+    .any(|k| e.contains(k))
+}
+
+/// Hosts where IPv4 rescued a dropped connection; later requests go straight to IPv4.
+static IPV4_HOSTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Retry policy for connections that drop mid-request. Some sites' IPv6
+/// servers cut off a share of connections (seen over VPN tunnels such as
+/// Cloudflare WARP) while IPv4 works; browsers hide this by retrying, yt-dlp
+/// doesn't. Up to 3 attempts, switching to IPv4 after the first failure and
+/// remembering hosts where that helped.
+pub struct NetworkRetry {
+    host: Option<String>,
+    pub ipv4: bool,
+    started_ipv4: bool,
+    attempt: u32,
+}
+
+impl NetworkRetry {
+    pub const MAX_ATTEMPTS: u32 = 3;
+
+    pub fn new(url: &str) -> Self {
+        let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned));
+        let ipv4 = host.as_ref().is_some_and(|h| IPV4_HOSTS.lock().unwrap().contains(h));
+        Self { host, ipv4, started_ipv4: ipv4, attempt: 1 }
+    }
+
+    /// After a failed attempt: how long to wait before trying again, or `None` to give up.
+    pub fn should_retry(&mut self, err: &str) -> Option<std::time::Duration> {
+        if !is_transient(err) || self.attempt >= Self::MAX_ATTEMPTS {
+            return None;
+        }
+        self.attempt += 1;
+        self.ipv4 = true;
+        Some(std::time::Duration::from_millis(400 * self.attempt as u64))
+    }
+
+    pub fn succeeded(&self) {
+        if self.ipv4 && !self.started_ipv4 {
+            if let Some(h) = &self.host {
+                IPV4_HOSTS.lock().unwrap().insert(h.clone());
+            }
+        }
+    }
+
+    pub fn give_up_message(&self, err: String) -> String {
+        if !is_transient(&err) {
+            return err;
+        }
+        let site = self.host.as_deref().map(|h| h.trim_start_matches("www.")).unwrap_or("the site");
+        format!("The connection to {site} kept dropping (tried {} times). Check your internet or VPN, then try again.", self.attempt)
+    }
+}
+
 pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<&str>) -> Result<VideoInfo, String> {
-    let out = command(&ytdlp()?)
-        .arg("-J")
-        .args(common_args(headers, cookies_file))
+    let mut retry = NetworkRetry::new(url);
+    loop {
+        match info_once(url, headers, cookies_file, retry.ipv4).await {
+            Ok(i) => {
+                retry.succeeded();
+                return Ok(i);
+            }
+            Err(e) => match retry.should_retry(&e) {
+                Some(wait) => tokio::time::sleep(wait).await,
+                None => return Err(retry.give_up_message(e)),
+            },
+        }
+    }
+}
+
+async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option<&str>, force_ipv4: bool) -> Result<VideoInfo, String> {
+    let mut cmd = command(&ytdlp()?);
+    cmd.arg("-J").args(common_args(headers, cookies_file));
+    if force_ipv4 {
+        cmd.arg("--force-ipv4");
+    }
+    let out = cmd
         .arg("--")
         .arg(url)
         .stdout(Stdio::piped())
@@ -282,6 +372,31 @@ pub async fn download(
     cancel: CancellationToken,
     mut on_progress: impl FnMut(VideoProgress),
 ) -> Result<Option<PathBuf>, String> {
+    // A dropped connection is retried (over IPv4); yt-dlp resumes its partial files.
+    let mut retry = NetworkRetry::new(job.url);
+    loop {
+        match download_once(&job, &cancel, &mut on_progress, retry.ipv4).await {
+            Ok(r) => {
+                retry.succeeded();
+                return Ok(r);
+            }
+            Err(e) => match retry.should_retry(&e) {
+                Some(wait) => tokio::select! {
+                    _ = cancel.cancelled() => return Ok(None),
+                    _ = tokio::time::sleep(wait) => {}
+                },
+                None => return Err(retry.give_up_message(e)),
+            },
+        }
+    }
+}
+
+async fn download_once(
+    job: &VideoJob<'_>,
+    cancel: &CancellationToken,
+    on_progress: &mut impl FnMut(VideoProgress),
+    force_ipv4: bool,
+) -> Result<Option<PathBuf>, String> {
     std::fs::create_dir_all(job.dest_dir).map_err(|e| e.to_string())?;
     let template = job.dest_dir.join(format!("{}.%(ext)s", job.stem.replace('%', "%%")));
     let mut cmd = command(&ytdlp()?);
@@ -300,6 +415,9 @@ pub async fn download(
     }
     if let Some(p) = job.proxy {
         cmd.args(["--proxy", p]);
+    }
+    if force_ipv4 {
+        cmd.arg("--force-ipv4");
     }
     cmd.arg("--").arg(job.url).stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -498,6 +616,42 @@ mod tests {
     #[test]
     fn drm_errors_are_explained() {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
+    }
+
+    const SSL_EOF: &str = "[Eporner] abc: Unable to download JSON metadata: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)";
+
+    #[test]
+    fn dropped_connections_are_transient_site_answers_are_not() {
+        assert!(is_transient(SSL_EOF));
+        assert!(is_transient("ERROR: Unable to download webpage: <urlopen error [Errno 10054] Connection reset by peer>"));
+        assert!(is_transient("Read timed out. (read timeout=20.0)"));
+        assert!(!is_transient("This video is DRM-protected and can't be downloaded."));
+        assert!(!is_transient("ERROR: [generic] Unsupported URL: https://example.com"));
+        assert!(!is_transient("ERROR: Video unavailable"));
+    }
+
+    #[test]
+    fn retry_switches_to_ipv4_gives_up_after_three_and_remembers_the_host() {
+        let mut r = NetworkRetry::new("https://www.retry-test-a.example/video/1");
+        assert!(!r.ipv4, "first attempt uses the normal route");
+        assert!(r.should_retry(SSL_EOF).is_some());
+        assert!(r.ipv4, "retries go over IPv4");
+        assert!(r.should_retry(SSL_EOF).is_some());
+        assert!(r.should_retry(SSL_EOF).is_none(), "three attempts in total");
+        let msg = r.give_up_message(SSL_EOF.to_string());
+        assert!(msg.contains("retry-test-a.example") && msg.contains("3 times"), "{msg}");
+
+        // Site answers aren't retried and keep their own message.
+        let mut r = NetworkRetry::new("https://www.retry-test-b.example/v");
+        assert!(r.should_retry("This video is DRM-protected and can't be downloaded.").is_none());
+        assert_eq!(r.give_up_message("Video unavailable".into()), "Video unavailable");
+
+        // IPv4 rescued this host: the next request starts on IPv4.
+        let mut r = NetworkRetry::new("https://www.retry-test-c.example/v/1");
+        r.should_retry(SSL_EOF);
+        r.succeeded();
+        assert!(NetworkRetry::new("https://www.retry-test-c.example/v/2").ipv4);
+        assert!(!NetworkRetry::new("https://www.retry-test-d.example/v").ipv4, "other sites unaffected");
     }
 
     fn fake_info(title: &str) -> VideoInfo {
