@@ -47,9 +47,10 @@ Free and open source, by Ali Studio.
 ```powershell
 winget install yt-dlp.yt-dlp
 winget install Gyan.FFmpeg
+winget install DenoLand.Deno
 ```
 
-Settings → Videos shows whether they were found. Normal file downloads work without them.
+Deno lets yt-dlp solve YouTube's player challenge; without it some YouTube videos show only thumbnails. Settings → Videos shows whether the tools were found. Normal file downloads work without them.
 
 ## Screenshots
 

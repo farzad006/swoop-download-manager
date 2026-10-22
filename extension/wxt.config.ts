@@ -8,7 +8,7 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: "Swoop",
     description: "Sends downloads and web videos to Swoop, the download manager by Ali Studio.",
-    version: "1.0.4",
+    version: "1.0.5",
     permissions: ["downloads", "nativeMessaging", "cookies", "webRequest", "contextMenus", "storage", "tabs"],
     host_permissions: ["<all_urls>"],
     icons: { 16: "icon/16.png", 32: "icon/32.png", 48: "icon/48.png", 128: "icon/128.png" },

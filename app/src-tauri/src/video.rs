@@ -60,10 +60,16 @@ pub struct VideoInfo {
     pub choices: Vec<Choice>,
 }
 
-fn common_args(headers: &[(String, String)], cookies_file: Option<&str>) -> Vec<String> {
+fn has_login(headers: &[(String, String)], cookies_file: Option<&str>) -> bool {
+    cookies_file.is_some() || headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("cookie"))
+}
+
+/// `signed_in: false` leaves out the browser's cookies (file and header).
+fn common_args(headers: &[(String, String)], cookies_file: Option<&str>, signed_in: bool) -> Vec<String> {
+    let cookies_file = cookies_file.filter(|_| signed_in);
     let mut a = vec!["--no-playlist".into(), "--no-warnings".into(), "--windows-filenames".into()];
     for (k, v) in headers {
-        if k.eq_ignore_ascii_case("cookie") && cookies_file.is_some() {
+        if k.eq_ignore_ascii_case("cookie") && (cookies_file.is_some() || !signed_in) {
             continue;
         }
         if k.eq_ignore_ascii_case("user-agent") {
@@ -107,6 +113,14 @@ pub fn is_transient(err: &str) -> bool {
     ]
     .iter()
     .any(|k| e.contains(k))
+}
+
+/// The site answered but offered nothing downloadable. YouTube does this to
+/// signed-in requests when yt-dlp can't solve its JavaScript challenge (only
+/// storyboard images are left), while the same video works without cookies.
+pub fn is_missing_formats(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    ["requested format is not available", "only images are available", "no video formats found"].iter().any(|k| e.contains(k))
 }
 
 /// Hosts where IPv4 rescued a dropped connection; later requests go straight to IPv4.
@@ -163,12 +177,14 @@ impl NetworkRetry {
 
 pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<&str>) -> Result<VideoInfo, String> {
     let mut retry = NetworkRetry::new(url);
+    let mut signed_in = true;
     loop {
-        match info_once(url, headers, cookies_file, retry.ipv4).await {
+        match info_once(url, headers, cookies_file, signed_in, retry.ipv4).await {
             Ok(i) => {
                 retry.succeeded();
                 return Ok(i);
             }
+            Err(e) if signed_in && has_login(headers, cookies_file) && is_missing_formats(&e) => signed_in = false,
             Err(e) => match retry.should_retry(&e) {
                 Some(wait) => tokio::time::sleep(wait).await,
                 None => return Err(retry.give_up_message(e)),
@@ -177,9 +193,9 @@ pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<
     }
 }
 
-async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option<&str>, force_ipv4: bool) -> Result<VideoInfo, String> {
+async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option<&str>, signed_in: bool, force_ipv4: bool) -> Result<VideoInfo, String> {
     let mut cmd = command(&ytdlp()?);
-    cmd.arg("-J").args(common_args(headers, cookies_file));
+    cmd.arg("-J").args(common_args(headers, cookies_file, signed_in));
     if force_ipv4 {
         cmd.arg("--force-ipv4");
     }
@@ -374,12 +390,15 @@ pub async fn download(
 ) -> Result<Option<PathBuf>, String> {
     // A dropped connection is retried (over IPv4); yt-dlp resumes its partial files.
     let mut retry = NetworkRetry::new(job.url);
+    let mut signed_in = true;
     loop {
-        match download_once(&job, &cancel, &mut on_progress, retry.ipv4).await {
+        match download_once(&job, signed_in, &cancel, &mut on_progress, retry.ipv4).await {
             Ok(r) => {
                 retry.succeeded();
                 return Ok(r);
             }
+            // Nothing downloadable while signed in: try once more without cookies.
+            Err(e) if signed_in && has_login(job.headers, job.cookies_file) && is_missing_formats(&e) => signed_in = false,
             Err(e) => match retry.should_retry(&e) {
                 Some(wait) => tokio::select! {
                     _ = cancel.cancelled() => return Ok(None),
@@ -393,6 +412,7 @@ pub async fn download(
 
 async fn download_once(
     job: &VideoJob<'_>,
+    signed_in: bool,
     cancel: &CancellationToken,
     on_progress: &mut impl FnMut(VideoProgress),
     force_ipv4: bool,
@@ -401,7 +421,7 @@ async fn download_once(
     let template = job.dest_dir.join(format!("{}.%(ext)s", job.stem.replace('%', "%%")));
     let mut cmd = command(&ytdlp()?);
     cmd.args(format_args(job.choice, job.prefer_mp4))
-        .args(common_args(job.headers, job.cookies_file))
+        .args(common_args(job.headers, job.cookies_file, signed_in))
         .args(["-N", &job.connections.clamp(1, 16).to_string()])
         .args(["--newline", "--progress", "--progress-template", "download:IDMP%(progress)j"])
         .args(["--print", "after_move:IDMF%(filepath)j", "--no-mtime", "--continue"])
@@ -539,7 +559,9 @@ pub async fn update_ytdlp(stamp_file: PathBuf) {
     let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     let python = dir.file_name().filter(|n| n.eq_ignore_ascii_case("Scripts")).and_then(|_| dir.parent()).map(|p| p.join("python.exe"));
     let result = match python.filter(|p| p.is_file()) {
-        Some(py) => command(&py).args(["-m", "pip", "install", "-U", "--quiet", "yt-dlp"]).output().await,
+        // `[default]` adds yt-dlp-ejs, the solver YouTube's JavaScript
+        // challenges need; without it signed-in requests see only thumbnails.
+        Some(py) => command(&py).args(["-m", "pip", "install", "-U", "--quiet", "yt-dlp[default]"]).output().await,
         None => command(&exe).arg("-U").output().await,
     };
     if result.is_ok() {
@@ -616,6 +638,31 @@ mod tests {
     #[test]
     fn drm_errors_are_explained() {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
+    }
+
+    #[test]
+    fn only_thumbnails_counts_as_missing_formats() {
+        assert!(is_missing_formats(
+            "[youtube] Xrxy_W78SKk: Requested format is not available. Use --list-formats for a list of available formats"
+        ));
+        assert!(is_missing_formats("WARNING: Only images are available for download."));
+        assert!(!is_missing_formats("ERROR: Video unavailable"));
+        assert!(!is_transient("Requested format is not available"), "not a network problem");
+    }
+
+    #[test]
+    fn signed_out_retry_leaves_out_every_cookie() {
+        let headers = vec![("Cookie".to_string(), "SID=1".to_string()), ("Referer".to_string(), "https://r".to_string())];
+        assert!(has_login(&headers, None) && has_login(&[], Some("c.txt")) && !has_login(&headers[1..], None));
+
+        let signed_in = common_args(&headers, None, true);
+        assert!(signed_in.contains(&"Cookie:SID=1".to_string()), "header sent when there's no cookies file");
+        let signed_in = common_args(&headers, Some("c.txt"), true);
+        assert!(signed_in.contains(&"c.txt".to_string()) && !signed_in.contains(&"Cookie:SID=1".to_string()));
+
+        let anon = common_args(&headers, Some("c.txt"), false);
+        assert!(!anon.contains(&"--cookies".to_string()) && !anon.iter().any(|a| a.starts_with("Cookie:")), "{anon:?}");
+        assert!(anon.contains(&"Referer:https://r".to_string()), "other headers kept");
     }
 
     const SSL_EOF: &str = "[Eporner] abc: Unable to download JSON metadata: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)";
