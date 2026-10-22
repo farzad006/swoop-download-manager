@@ -123,6 +123,12 @@ pub fn run() {
             if mgr.settings().update_ytdlp {
                 tauri::async_runtime::spawn(video::update_ytdlp(data_dir.join("yt-dlp-updated")));
             }
+            // Keep a loaded window ready so dialogs (video qualities, file info) open instantly.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                windows::warm_spare(&handle);
+            });
             // The first-run welcome lives in the main window, so show it even for background starts.
             if !background_start || !mgr.settings().onboarded {
                 windows::show_main(app.handle());
@@ -188,6 +194,7 @@ pub fn run() {
             commands::reveal_extension,
             commands::open_browser_setup_window,
             commands::take_browser_selection,
+            commands::spare_ready,
             commands::clipboard_link,
             commands::about,
             commands::open_link,

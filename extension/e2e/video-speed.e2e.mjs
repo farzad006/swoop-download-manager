@@ -6,8 +6,7 @@
 // and WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9557,
 // `npm run build:chrome`. Run: SWOOP_DATA_DIR=... node e2e/video-speed.e2e.mjs
 import { chromium } from "playwright-core";
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -38,21 +37,20 @@ const setPrefetch = async (on) => {
   await invoke("save_settings", { settings: { ...s, videoPrefetch: on, videoClickAction: "ask" } });
 };
 
-// --- Edge with the extension, throwaway profile
+// --- Edge with the extension, throwaway profile. Edge (like Chrome 137+)
+// ignores --load-extension now, so the extension is loaded over CDP, which
+// needs Playwright's pipe connection and --enable-unsafe-extension-debugging.
 const ext = resolve("./.output/chrome-mv3");
 const profile = mkdtempSync(join(tmpdir(), "swoop-video-"));
-mkdirSync(join(profile, "Default"), { recursive: true });
-writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({ download: { default_directory: join(profile, "dl"), prompt_for_download: false } }));
-const edge = spawn("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", [
-  `--user-data-dir=${profile}`, "--remote-debugging-port=9334", `--disable-extensions-except=${ext}`, `--load-extension=${ext}`,
-  "--window-position=-2400,0", "--no-first-run", "--no-default-browser-check", "about:blank",
-]);
-let browser;
-for (let i = 0; i < 40 && !browser; i++) {
-  browser = await chromium.connectOverCDP("http://127.0.0.1:9334").catch(() => undefined);
-  if (!browser) await sleep(250);
-}
-const ctx = browser.contexts()[0];
+const ctx = await chromium.launchPersistentContext(profile, {
+  executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  headless: false,
+  args: ["--enable-unsafe-extension-debugging", "--window-position=-2400,0"],
+  ignoreDefaultArgs: ["--disable-extensions", "--disable-component-extensions-with-background-pages"],
+});
+const browser = ctx.browser();
+const loaded = await (await browser.newBrowserCDPSession()).send("Extensions.loadUnpacked", { path: ext });
+if (loaded.id !== EXT_ID) throw new Error(`extension loaded as ${loaded.id}, expected ${EXT_ID}`);
 for (let i = 0; i < 60 && !ctx.serviceWorkers().some((w) => w.url().includes(EXT_ID)); i++) await sleep(250);
 
 /** Opens a fresh copy of the test page, waits `think` ms (a person moving to the
@@ -63,13 +61,23 @@ async function clickToQualityList(think) {
   const v = await page.locator("#v").boundingBox();
   await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2); // the button appears
   await sleep(think);
+  // Move again (as a person heading for the button would): the first move can
+  // land before the content script has started.
+  await page.mouse.move(v.x + v.width / 2 + 5, v.y + v.height / 2);
+  await sleep(100);
   const box = await page.locator("swoop-panel").boundingBox();
-  const before = new Set(appPages());
+  // The dialog may be a brand-new window or the preloaded spare (whose page
+  // already exists and switches to #/video/…), so compare video dialogs only.
+  const before = new Set(appPages().filter((p) => p.url().includes("#/video/")));
   const t0 = Date.now();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   let dialog, ms = null;
   for (let i = 0; i < 300 && ms == null; i++) {
     dialog = appPages().find((p) => !before.has(p) && p.url().includes("#/video/"));
+    if (dialog && process.env.DEBUG && !dialog.__seen) {
+      dialog.__seen = true;
+      console.log(`  dialog window showed the video route after ${Date.now() - t0} ms`);
+    }
     if (dialog && (await dialog.evaluate(() => document.body.innerText.includes("Quality")).catch(() => false))) ms = Date.now() - t0;
     else await sleep(50);
   }
@@ -78,13 +86,13 @@ async function clickToQualityList(think) {
 
 try {
   await setPrefetch(false);
-  const off = await clickToQualityList(1500);
+  const off = await clickToQualityList(4000);
   check("quality list appears (advance lookup off)", off.ms != null, `${off.ms} ms after the click`);
   await off.dialog?.close().catch(() => {});
   await off.page.close();
 
   await setPrefetch(true);
-  const on = await clickToQualityList(1500);
+  const on = await clickToQualityList(4000);
   check("quality list appears (advance lookup on)", on.ms != null, `${on.ms} ms after the click`);
   check("advance lookup makes the list appear faster", on.ms != null && off.ms != null && on.ms < off.ms / 2, `${off.ms} ms → ${on.ms} ms`);
 
@@ -102,8 +110,7 @@ try {
   check("the file is on disk", !!row && existsSync(join(row.dest_dir, row.file_name)), row ? join(row.dest_dir, row.file_name) : "");
   await on.page.close();
 } finally {
-  await browser.close().catch(() => {});
-  edge.kill();
+  await ctx.close().catch(() => {});
   await app.close().catch(() => {});
   await sleep(1000);
   try {

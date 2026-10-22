@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./index.css";
 import { ToastProvider } from "./components/ui";
 import Main from "./views/Main";
@@ -11,8 +13,16 @@ import Browsers from "./views/Browsers";
 
 // Each Tauri window loads index.html#/<route>/<param>.
 function Route() {
-  const [, route, param] = window.location.hash.split("/");
+  const [hash, setHash] = useState(window.location.hash);
+  useEffect(() => {
+    const f = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", f);
+    return () => window.removeEventListener("hashchange", f);
+  }, []);
+  const [, route, param] = hash.split("/");
   switch (route) {
+    case "spare":
+      return <Spare />;
     case "progress":
       return <Progress id={Number(param)} />;
     case "capture":
@@ -26,6 +36,20 @@ function Route() {
     default:
       return <Main />;
   }
+}
+
+/** A hidden, preloaded window waiting to become the next dialog (see windows.rs). */
+function Spare() {
+  useEffect(() => {
+    const win = getCurrentWebviewWindow();
+    const un = win.listen<[string, string]>("spare-open", (e) => {
+      const [label, route] = e.payload;
+      if (label === win.label) window.location.hash = `#${route}`;
+    });
+    un.then(() => invoke("spare_ready"));
+    return () => void un.then((f) => f());
+  }, []);
+  return null;
 }
 
 // Native-app feel: no browser context menu outside text fields.

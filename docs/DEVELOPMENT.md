@@ -45,7 +45,7 @@ SWOOP_DATA_DIR=%TEMP%\swoop-test BROWSER=edge node extension/e2e/chromium.e2e.mj
 Two more live checks use the same setup (start Swoop with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` so the scripts can see its windows):
 
 - `node extension/e2e/window-open.check.mjs <port>` confirms windows opened from the app actually load (a window built from a synchronous command deadlocks WebView2).
-- `node extension/e2e/video-speed.e2e.mjs` (port 9557) times "Download this video" with and without the advance lookup, and downloads the test server's `/video-page`, whose title contains ’ and –.
+- `node extension/e2e/video-speed.e2e.mjs` (port 9557; loads the extension over CDP because Edge now ignores `--load-extension`) times "Download this video" with and without the advance lookup, and downloads the test server's `/video-page`, whose title contains ’ and –.
 
 The script drives a throwaway browser profile. `SWOOP_DATA_DIR` keeps test runs away from your real download list; pre-create its `swoop.db` settings with `onboarded: true, showCaptureDialog: false` so no windows pop up. Only one Swoop runs at a time.
 

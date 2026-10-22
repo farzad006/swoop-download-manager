@@ -47,29 +47,38 @@ export default defineContentScript({
       panel.show(Math.max(4, r.right - panel.width - 10), Math.max(4, r.top + 10));
     };
 
-    // Once the button has been showing for a moment, ask Swoop to look the
-    // video up so a click opens the quality list instantly.
-    // (Scheduled once per video: activate() runs on every mouse move.)
-    let prefetchFor: HTMLVideoElement | null = null;
+    // As soon as a real video shows on the page, ask Swoop to look it up so a
+    // click opens the quality list instantly (yt-dlp needs several seconds).
+    // Once per page address: YouTube keeps the same <video> while you move
+    // between videos. The background page limits it further.
+    let prefetchedUrl = "";
+    let prefetchTimer = 0;
+    const prefetch = (v: HTMLVideoElement) => {
+      if (prefetchedUrl === location.href || prefetchTimer) return;
+      prefetchTimer = window.setTimeout(() => {
+        prefetchTimer = 0;
+        if (!v.isConnected || !eligible(v) || prefetchedUrl === location.href) return;
+        prefetchedUrl = location.href;
+        const src = v.currentSrc && !v.currentSrc.startsWith("blob:") ? v.currentSrc : undefined;
+        browser.runtime.sendMessage({ type: "video-prefetch", pageUrl: location.href, title: document.title, src }).catch(() => {});
+      }, 300);
+    };
+
     const activate = (v: HTMLVideoElement) => {
       clearTimeout(hideTimer);
       hideTimer = 0;
       current = v;
       place();
-      if (prefetchFor === v) return;
-      prefetchFor = v;
-      window.setTimeout(() => {
-        if (current !== v) return;
-        const src = v.currentSrc && !v.currentSrc.startsWith("blob:") ? v.currentSrc : undefined;
-        browser.runtime.sendMessage({ type: "video-prefetch", pageUrl: location.href, title: document.title, src }).catch(() => {});
-      }, 400);
+      prefetch(v);
     };
 
     const attach = (v: HTMLVideoElement) => {
       if ((v as any).__swoop) return;
       (v as any).__swoop = true;
       v.addEventListener("playing", () => activate(v));
+      v.addEventListener("loadedmetadata", () => eligible(v) && prefetch(v));
       if (!v.paused && eligible(v)) activate(v);
+      else if (eligible(v)) prefetch(v);
     };
 
     // Players and browsers (Opera's pop-out button, YouTube's controls) lay

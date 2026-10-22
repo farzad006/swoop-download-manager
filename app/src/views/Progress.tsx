@@ -15,30 +15,42 @@ export default function Progress({ id }: { id: number }) {
   const win = getCurrentWindow();
 
   useEffect(() => {
-    api.get(id).then(setD);
     api.settings().then((s) => setShowComplete(s.showCompleteDialog));
     const un = [
       listen<P>("progress", (e) => e.payload.id === id && setP(e.payload)),
       listen<Download>("download-updated", (e) => e.payload.id === id && setD(e.payload)),
       listen<number>("download-removed", (e) => e.payload === id && win.close()),
     ];
+    // Read the download only once listening: a quick download can finish while
+    // this window loads, and its "done" event must not fall in between.
+    Promise.all(un).then(() => api.get(id).then(setD));
     return () => un.forEach((x) => x.then((f) => f()));
   }, [id, win]);
 
-  const status = p?.status ?? d?.status;
+  // The record decides whether it's still running (see Main's `effective`).
+  const running = d?.status === "downloading";
+  const status = running && p?.status === "probing" ? "probing" : d?.status;
+
+  // Safety net while running: re-read the record now and then, so a missed
+  // update can't leave the window stuck at 96%.
+  useEffect(() => {
+    if (!running) return;
+    const t = window.setInterval(() => api.get(id).then((r) => r && r.status !== "downloading" && setD(r)), 2000);
+    return () => window.clearInterval(t);
+  }, [id, running]);
   useEffect(() => {
     if (status === "completed" && !showComplete) win.close();
   }, [status, showComplete, win]);
 
-  const downloaded = p?.downloaded ?? d?.downloaded ?? 0;
-  const total = p?.total ?? d?.size ?? null;
+  const live = running ? p : null;
+  const downloaded = live?.downloaded ?? d?.downloaded ?? 0;
+  const total = live?.total ?? d?.size ?? null;
   const pc = percent(downloaded, total);
   useEffect(() => {
     if (d) win.setTitle(status === "completed" ? "Download complete" : pc != null ? `${pc.toFixed(0)}% · ${d.fileName}` : d.fileName).catch(() => {});
   }, [d, pc, status, win]);
 
   if (!d) return null;
-  const running = status === "downloading" || status === "probing";
 
   if (status === "completed") {
     return (
@@ -70,7 +82,7 @@ export default function Progress({ id }: { id: number }) {
       ? err!.text
       : status === "probing"
         ? "Connecting…"
-        : p?.phase
+        : running && p?.phase
           ? "Finishing up (joining audio and video)…"
           : running
             ? fmtEtaFriendly(p?.etaSecs) || "Downloading…"

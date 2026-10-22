@@ -51,8 +51,11 @@ const STATUS_FILTERS: { key: StatusKey; label: string; icon: typeof Layers }[] =
 ];
 
 /** Live status wins over the stored one while a transfer runs. */
+/** The record decides whether a download is running (it's updated last when one
+ *  ends); progress events only add detail. A late progress event must not make
+ *  a finished download look stuck at 96%. */
 function effective(d: Download, p?: Progress): Status {
-  if (p && (p.status === "downloading" || p.status === "probing")) return p.status;
+  if (d.status === "downloading" && p?.status === "probing") return "probing";
   return d.status;
 }
 
@@ -90,7 +93,17 @@ export default function Main() {
     reloadBrowsers();
     reloadSettings();
     const un = [
-      listen<Download>("download-updated", (e) => setDownloads((m) => new Map(m).set(e.payload.id, e.payload))),
+      listen<Download>("download-updated", (e) => {
+        setDownloads((m) => new Map(m).set(e.payload.id, e.payload));
+        if (e.payload.status !== "downloading") {
+          setProgress((m) => {
+            if (!m.has(e.payload.id)) return m;
+            const n = new Map(m);
+            n.delete(e.payload.id);
+            return n;
+          });
+        }
+      }),
       listen<number>("download-removed", (e) => {
         setDownloads((m) => {
           const n = new Map(m);
@@ -138,7 +151,7 @@ export default function Main() {
 
   const run = useCallback((f: () => Promise<unknown>) => f().catch((e) => toast(String(e), "error")), [toast]);
   const sel = [...selected].map((id) => downloads.get(id)).filter((d): d is Download => !!d);
-  const active = [...progress.values()].filter((p) => p.status === "downloading" || p.status === "probing");
+  const active = [...progress.values()].filter((p) => downloads.get(p.id)?.status === "downloading");
   const totalSpeed = active.reduce((s, p) => s + p.speed, 0);
 
   const addLink = useCallback(

@@ -455,6 +455,12 @@ pub async fn open_browser_setup_window(app: AppHandle, selected: Vec<String>) ->
     crate::windows::open_browsers(&app, &selected).map_err(err)
 }
 
+/// A hidden spare window has loaded and can host the next dialog.
+#[tauri::command]
+pub fn spare_ready(window: tauri::WebviewWindow) {
+    crate::windows::spare_ready(window.label());
+}
+
 /// Browsers ticked in the installer (for the welcome screen), handed out once.
 #[tauri::command]
 pub fn take_browser_selection(mgr: Mgr) -> Vec<String> {
