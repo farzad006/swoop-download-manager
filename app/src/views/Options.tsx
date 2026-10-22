@@ -83,10 +83,13 @@ export function SettingsDialog({ onClose, initialTab }: { onClose: () => void; i
               <SettingRow title="Ask before downloading" description="Shows the file name and folder first. Turn off to start browser downloads straight away.">
                 <Switch label="Ask before downloading" checked={s.showCaptureDialog} onChange={(v) => set("showCaptureDialog", v)} />
               </SettingRow>
-              <SettingRow title="Show a progress window" description="Opens a small window for each download you start.">
+              <SettingRow title="Show a progress window" description="Opens a small window for each download you start. Progress always shows in the main list.">
                 <Switch label="Show progress window" checked={s.showProgressWindow} onChange={(v) => set("showProgressWindow", v)} />
               </SettingRow>
-              <SettingRow title="Tell me when a download finishes" description="Turns the progress window into a “Download complete” window with Open and Show in folder buttons.">
+              <SettingRow
+                title="“Download complete” window"
+                description="Keeps the progress window open as a “Download complete” window. Either way, Windows shows a notification with Open and Show in folder buttons."
+              >
                 <Switch label="Download complete window" checked={s.showCompleteDialog} onChange={(v) => set("showCompleteDialog", v)} />
               </SettingRow>
               <SettingRow title="Notice copied links" description="When you copy a link to a file, Swoop offers to download it.">

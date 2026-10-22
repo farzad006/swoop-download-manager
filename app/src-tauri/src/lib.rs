@@ -7,6 +7,7 @@ mod db;
 mod ipc;
 mod manager;
 mod model;
+mod notify;
 mod video;
 mod windows;
 

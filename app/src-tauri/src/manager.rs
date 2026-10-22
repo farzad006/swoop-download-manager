@@ -290,7 +290,7 @@ impl Manager {
                 let _ = db.set_progress(id, *bytes, Some(*bytes));
                 let _ = db.set_status(id, Status::Completed, None);
                 drop(db);
-                let _ = self.app.notification().builder().title("Download complete").body(&name).show();
+                crate::notify::download_complete(&self.app, &name, path.clone());
                 (Status::Completed, None)
             }
             Ok(Finish::Paused { downloaded, total }) => {

@@ -4113,7 +4113,7 @@ dependencies = [
 
 [[package]]
 name = "swoop"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4131,6 +4131,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tauri-winrt-notification",
  "tempfile",
  "tokio",
  "tokio-util",
