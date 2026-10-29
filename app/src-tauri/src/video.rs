@@ -84,6 +84,9 @@ fn common_args(headers: &[(String, String)], cookies_file: Option<&str>, signed_
     a
 }
 
+const BROKEN_INSTALL: &str =
+    "The video downloader (yt-dlp) is damaged and couldn't be repaired automatically. Reinstall it with: pip install -U \"yt-dlp[default]\"";
+
 pub fn friendly_error(stderr: &str) -> String {
     let last = stderr.lines().rev().find(|l| l.starts_with("ERROR:")).or_else(|| stderr.lines().rev().find(|l| !l.trim().is_empty()));
     let msg = last.unwrap_or("yt-dlp failed").trim_start_matches("ERROR:").trim().to_string();
@@ -177,7 +180,7 @@ impl NetworkRetry {
 
 pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<&str>) -> Result<VideoInfo, String> {
     let mut retry = NetworkRetry::new(url);
-    let mut signed_in = true;
+    let (mut signed_in, mut repaired) = (true, false);
     loop {
         match info_once(url, headers, cookies_file, signed_in, retry.ipv4).await {
             Ok(i) => {
@@ -185,6 +188,12 @@ pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<
                 return Ok(i);
             }
             Err(e) if signed_in && has_login(headers, cookies_file) && is_missing_formats(&e) => signed_in = false,
+            Err(e) if !repaired && is_broken_install(&e) => {
+                repaired = true;
+                if !repair_ytdlp().await {
+                    return Err(BROKEN_INSTALL.into());
+                }
+            }
             Err(e) => match retry.should_retry(&e) {
                 Some(wait) => tokio::time::sleep(wait).await,
                 None => return Err(retry.give_up_message(e)),
@@ -390,7 +399,7 @@ pub async fn download(
 ) -> Result<Option<PathBuf>, String> {
     // A dropped connection is retried (over IPv4); yt-dlp resumes its partial files.
     let mut retry = NetworkRetry::new(job.url);
-    let mut signed_in = true;
+    let (mut signed_in, mut repaired) = (true, false);
     loop {
         match download_once(&job, signed_in, &cancel, &mut on_progress, retry.ipv4).await {
             Ok(r) => {
@@ -399,6 +408,12 @@ pub async fn download(
             }
             // Nothing downloadable while signed in: try once more without cookies.
             Err(e) if signed_in && has_login(job.headers, job.cookies_file) && is_missing_formats(&e) => signed_in = false,
+            Err(e) if !repaired && is_broken_install(&e) => {
+                repaired = true;
+                if !repair_ytdlp().await {
+                    return Err(BROKEN_INSTALL.into());
+                }
+            }
             Err(e) => match retry.should_retry(&e) {
                 Some(wait) => tokio::select! {
                     _ = cancel.cancelled() => return Ok(None),
@@ -543,30 +558,103 @@ async fn kill_tree(pid: Option<u32>) {
     }
 }
 
+/// The Python behind a pip-installed yt-dlp (its exe lives in a `Scripts`
+/// folder, with python.exe one level up, or beside it in a virtual
+/// environment); `None` for a standalone yt-dlp.exe.
+fn pip_python(exe: &Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    dir.file_name().filter(|n| n.eq_ignore_ascii_case("Scripts"))?;
+    [dir.parent()?.join("python.exe"), dir.join("python.exe")].into_iter().find(|p| p.is_file())
+}
+
+/// Where that Python keeps its packages.
+fn site_packages(py: &Path) -> Option<PathBuf> {
+    let dir = py.parent()?;
+    let root = if dir.file_name().is_some_and(|n| n.eq_ignore_ascii_case("Scripts")) { dir.parent()? } else { dir };
+    Some(root.join("Lib").join("site-packages"))
+}
+
+/// yt-dlp's launcher is there but its Python code isn't: a pip upgrade was cut
+/// off halfway (pip had already moved the old copy aside to `~t_dlp`).
+pub fn is_broken_install(err: &str) -> bool {
+    err.contains("No module named 'yt_dlp'") || err.contains("No module named yt_dlp")
+}
+
+/// Updates and repairs never run at the same time.
+static TOOL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn ytdlp_works(exe: &Path) -> bool {
+    command(exe).arg("--version").output().await.is_ok_and(|o| o.status.success())
+}
+
+/// `[default]` adds yt-dlp-ejs, the solver YouTube's JavaScript challenges
+/// need; without it signed-in requests see only thumbnails.
+async fn pip_install(py: &Path, upgrade: bool) {
+    let mut cmd = command(py);
+    cmd.args(["-m", "pip", "install", "--quiet"]);
+    if upgrade {
+        cmd.arg("-U");
+    }
+    let _ = cmd.arg("yt-dlp[default]").output().await;
+}
+
+/// Reinstalls a broken pip install of yt-dlp. Returns whether it works now.
+pub async fn repair_ytdlp() -> bool {
+    let _guard = TOOL_LOCK.lock().await;
+    let Some(exe) = find_binary("yt-dlp") else { return false };
+    if ytdlp_works(&exe).await {
+        return true; // repaired meanwhile
+    }
+    let Some(py) = pip_python(&exe) else { return false };
+    // pip's leftovers from the interrupted upgrade.
+    if let Some(site) = site_packages(&py) {
+        for e in std::fs::read_dir(site).into_iter().flatten().flatten() {
+            if e.file_name().to_string_lossy().starts_with("~t_dlp") {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    log::warn!("yt-dlp was broken (interrupted update); reinstalling");
+    // Forced: pip may still list yt-dlp as installed although its code is gone.
+    let _ = command(&py).args(["-m", "pip", "install", "--quiet", "--force-reinstall", "--no-deps", "yt-dlp"]).output().await;
+    pip_install(&py, false).await; // and its extras, if any went missing
+    ytdlp_works(&exe).await
+}
+
+/// Whether the stamp (seconds since 1970) is less than a day old. A missing,
+/// unreadable or old-style empty stamp, or one in the future, means "update".
+fn updated_recently(stamp: Option<&str>, now: i64) -> bool {
+    stamp.and_then(|s| s.trim().parse::<i64>().ok()).is_some_and(|t| (0..24 * 3600).contains(&(now - t)))
+}
+
 /// Keeps yt-dlp current (sites change their players often), at most once a
-/// day. A standalone yt-dlp.exe updates itself; a pip install (the exe lives in
-/// a Python `Scripts` folder) is upgraded with that Python's pip.
+/// day. A standalone yt-dlp.exe updates itself; a pip install is upgraded with
+/// that Python's pip, and reinstalled if the upgrade left it broken.
 pub async fn update_ytdlp(stamp_file: PathBuf) {
-    let fresh = std::fs::metadata(&stamp_file)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.elapsed().ok())
-        .is_some_and(|age| age < std::time::Duration::from_secs(24 * 3600));
-    let Some(exe) = find_binary("yt-dlp") else { return };
-    if fresh {
+    // The stamp holds the time of the last update. (Its modified time can't be
+    // used: rewriting an empty file doesn't change it, so Swoop used to run
+    // pip at every start, which made an interrupted upgrade far more likely.)
+    let now = chrono::Utc::now().timestamp();
+    if updated_recently(std::fs::read_to_string(&stamp_file).ok().as_deref(), now) {
         return;
     }
-    let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
-    let python = dir.file_name().filter(|n| n.eq_ignore_ascii_case("Scripts")).and_then(|_| dir.parent()).map(|p| p.join("python.exe"));
-    let result = match python.filter(|p| p.is_file()) {
-        // `[default]` adds yt-dlp-ejs, the solver YouTube's JavaScript
-        // challenges need; without it signed-in requests see only thumbnails.
-        Some(py) => command(&py).args(["-m", "pip", "install", "-U", "--quiet", "yt-dlp[default]"]).output().await,
-        None => command(&exe).arg("-U").output().await,
-    };
-    if result.is_ok() {
-        let _ = std::fs::write(&stamp_file, b"");
+    let Some(exe) = find_binary("yt-dlp") else { return };
+    let _guard = TOOL_LOCK.lock().await;
+    match pip_python(&exe) {
+        Some(py) => {
+            pip_install(&py, true).await;
+            if !ytdlp_works(&exe).await {
+                drop(_guard);
+                if !repair_ytdlp().await {
+                    return; // try again next start
+                }
+            }
+        }
+        None => {
+            let _ = command(&exe).arg("-U").output().await;
+        }
     }
+    let _ = std::fs::write(&stamp_file, now.to_string());
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -638,6 +726,64 @@ mod tests {
     #[test]
     fn drm_errors_are_explained() {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
+    }
+
+    #[test]
+    fn daily_update_stamp() {
+        let now = 1_800_000_000;
+        assert!(updated_recently(Some(&(now - 3600).to_string()), now));
+        assert!(!updated_recently(Some(&(now - 25 * 3600).to_string()), now), "a day old");
+        assert!(!updated_recently(Some(""), now), "1.0.7's empty stamp file");
+        assert!(!updated_recently(None, now));
+        assert!(!updated_recently(Some(&(now + 3600).to_string()), now), "clock went backwards");
+    }
+
+    #[test]
+    fn interrupted_pip_upgrade_is_recognised() {
+        let traceback = r#"Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "C:\Python312\Scripts\yt-dlp.exe\__main__.py", line 2, in <module>
+ModuleNotFoundError: No module named 'yt_dlp'"#;
+        assert!(is_broken_install(traceback));
+        assert!(is_broken_install(&friendly_error(traceback)), "the shown error keeps the marker");
+        assert!(!is_broken_install("ERROR: [youtube] abc: Video unavailable"));
+    }
+
+    /// Installs yt-dlp into a throwaway virtual environment, breaks it the way
+    /// an interrupted pip upgrade does (code moved aside to `~t_dlp`) and
+    /// checks Swoop reinstalls it. Needs Python and internet, so run on
+    /// purpose: `cargo test -- --ignored repairs_an_interrupted_upgrade`.
+    #[tokio::test]
+    #[ignore]
+    async fn repairs_an_interrupted_upgrade() {
+        let venv = tempfile::tempdir().unwrap();
+        let ok = std::process::Command::new("python").args(["-m", "venv"]).arg(venv.path()).status().unwrap().success();
+        assert!(ok, "venv created");
+        let scripts = venv.path().join("Scripts");
+        let pip = std::process::Command::new(scripts.join("python.exe")).args(["-m", "pip", "install", "--quiet", "yt-dlp"]).status().unwrap();
+        assert!(pip.success(), "yt-dlp installed into the venv");
+        let path = std::env::join_paths(std::iter::once(scripts.clone()).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))).unwrap();
+        // SAFETY: this test runs on its own (it's ignored unless asked for by name).
+        unsafe { std::env::set_var("PATH", path) };
+
+        let exe = find_binary("yt-dlp").unwrap();
+        assert!(exe.starts_with(&scripts), "uses the venv's yt-dlp: {}", exe.display());
+        let site = site_packages(&pip_python(&exe).unwrap()).unwrap();
+        std::fs::rename(site.join("yt_dlp"), site.join("~t_dlp")).unwrap();
+        // pip moves the package record aside too (seen on his PC); repair must cope either way.
+        if std::env::var_os("SWOOP_TEST_MOVE_DIST_INFO").is_some() {
+            let info = std::fs::read_dir(&site).unwrap().flatten().find(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.starts_with("yt_dlp-") && n.ends_with(".dist-info")
+            });
+            let info = info.unwrap().path();
+            std::fs::rename(&info, site.join(format!("~{}", &info.file_name().unwrap().to_string_lossy()[1..]))).unwrap();
+        }
+        let out = command(&exe).arg("--version").output().await.unwrap();
+        assert!(is_broken_install(&String::from_utf8_lossy(&out.stderr)), "break reproduced");
+
+        assert!(repair_ytdlp().await, "repaired");
+        assert!(site.join("yt_dlp").is_dir() && !site.join("~t_dlp").exists());
     }
 
     #[test]
