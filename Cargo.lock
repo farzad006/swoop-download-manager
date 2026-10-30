@@ -4113,7 +4113,7 @@ dependencies = [
 
 [[package]]
 name = "swoop"
-version = "1.0.8"
+version = "1.0.9"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4136,6 +4136,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+ "windows-sys 0.61.2",
  "winreg",
 ]
 

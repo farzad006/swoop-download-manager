@@ -287,6 +287,13 @@ impl InfoCache {
         Self { ttl, entries: Default::default() }
     }
 
+    /// A finished, successful lookup that's still remembered.
+    pub fn peek(&self, key: &str) -> Option<VideoInfo> {
+        let m = self.entries.lock().unwrap();
+        let (_, cell) = m.get(key).filter(|(at, _)| at.elapsed() < self.ttl)?;
+        cell.get()?.as_ref().ok().map(|(info, _)| info.clone())
+    }
+
     pub fn is_known(&self, key: &str) -> bool {
         self.entries.lock().unwrap().get(key).is_some_and(|(at, _)| at.elapsed() < self.ttl)
     }
@@ -532,6 +539,78 @@ async fn next_line<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R, buf: &mut Vec<
     }
 }
 
+/// Free bytes on the drive holding `dir` (or its nearest existing parent).
+pub fn free_space(dir: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    let existing = dir.ancestors().find(|p| p.is_dir())?;
+    let wide: Vec<u16> = existing.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut free = 0u64;
+    // SAFETY: `wide` is NUL-terminated and outlives the call; the other outputs are optional.
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut())
+    };
+    (ok != 0).then_some(free)
+}
+
+/// Bytes already on disk for this download: yt-dlp's pieces (`<stem>.f315.webm`,
+/// `.part`s) and any half-joined `<stem>.temp.mp4`, which a new join overwrites.
+pub fn bytes_on_disk(dir: &Path, stem: &str) -> u64 {
+    let prefix = format!("{stem}.");
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+/// Free space a video of `size` bytes still needs. Picture and sound are
+/// downloaded as separate pieces and then joined into a new file before the
+/// pieces are removed, so at the peak the video is on disk twice.
+pub fn space_needed(size: u64, already_on_disk: u64) -> u64 {
+    const MARGIN: u64 = 512 << 20;
+    (size * 2 + MARGIN).saturating_sub(already_on_disk)
+}
+
+fn gb(bytes: u64) -> String {
+    let g = bytes as f64 / 1e9;
+    if g >= 10.0 { format!("{g:.0} GB") } else { format!("{g:.1} GB") }
+}
+
+/// "C:" for a path on drive C, else the folder itself.
+fn drive_of(dir: &Path) -> String {
+    match dir.components().next() {
+        Some(std::path::Component::Prefix(p)) => p.as_os_str().to_string_lossy().trim_start_matches(r"\\?\").to_string(),
+        _ => dir.display().to_string(),
+    }
+}
+
+pub fn not_enough_space(dir: &Path, needed: u64, free: u64) -> String {
+    format!(
+        "Not enough space on {}: this video needs about {} free (the picture and sound are downloaded separately and then joined into one file), but only {} is free. Free up space or choose a folder on another drive, then try again.",
+        drive_of(dir),
+        gb(needed),
+        gb(free)
+    )
+}
+
+/// yt-dlp's message when ffmpeg couldn't join or convert the file.
+pub fn is_postprocess_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("conversion failed") || e.contains("no space left on device") || e.contains("there is not enough space on the disk")
+}
+
+pub fn ran_out_while_joining(dir: &Path, needed: u64, free: u64) -> String {
+    format!(
+        "{} ran out of space while joining the picture and sound into one file (that needs about {} free; {} is free). The downloaded parts are kept: free up space and click Try again, and Swoop will finish without downloading them again.",
+        drive_of(dir),
+        gb(needed),
+        gb(free)
+    )
+}
+
 /// The finished file `<stem>.<ext>` in `dir` (newest if several), ignoring
 /// yt-dlp's partial and intermediate files.
 pub fn find_output(dir: &Path, stem: &str) -> Option<PathBuf> {
@@ -726,6 +805,36 @@ mod tests {
     #[test]
     fn drm_errors_are_explained() {
         assert!(friendly_error("ERROR: [Foo] 123: This video is DRM protected").contains("DRM-protected"));
+    }
+
+    #[test]
+    fn space_for_a_video_counts_it_twice_minus_what_is_already_there() {
+        let gib = 1u64 << 30;
+        let margin = 512 << 20;
+        assert_eq!(space_needed(84 * gib, 0), 168 * gib + margin, "pieces + joined copy");
+        assert_eq!(space_needed(84 * gib, 84 * gib), 84 * gib + margin, "retry: pieces already downloaded");
+        assert_eq!(space_needed(1, 10 * gib), 0);
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Clip.f315.webm"), vec![0u8; 3000]).unwrap();
+        std::fs::write(dir.path().join("Clip.f140.m4a"), vec![0u8; 200]).unwrap();
+        std::fs::write(dir.path().join("Clip.temp.mp4"), vec![0u8; 50]).unwrap();
+        std::fs::write(dir.path().join("Clip (1).mp4"), vec![0u8; 999]).unwrap();
+        assert_eq!(bytes_on_disk(dir.path(), "Clip"), 3250, "only this download's files");
+        assert!(free_space(dir.path()).is_some_and(|f| f > 0));
+        assert!(free_space(&dir.path().join("not yet created").join("Video")).is_some(), "uses the nearest existing folder");
+    }
+
+    #[test]
+    fn running_out_of_space_is_explained() {
+        assert!(is_postprocess_failure("ERROR: Postprocessing: Conversion failed!"));
+        assert!(is_postprocess_failure("ERROR: Postprocessing: [Errno 28] No space left on device"));
+        assert!(!is_postprocess_failure("ERROR: Video unavailable"));
+        let dir = Path::new(r"C:\Users\me\Downloads\Video");
+        let msg = not_enough_space(dir, 182_000_000_000, 1_200_000_000);
+        assert!(msg.starts_with("Not enough space on C:") && msg.contains("182 GB") && msg.contains("1.2 GB"), "{msg}");
+        let msg = ran_out_while_joining(dir, 91_000_000_000, 20_000_000_000);
+        assert!(msg.starts_with("C: ran out of space") && msg.contains("91 GB") && msg.contains("20 GB") && msg.contains("Try again"), "{msg}");
     }
 
     #[test]

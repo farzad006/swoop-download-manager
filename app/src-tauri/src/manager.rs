@@ -230,6 +230,22 @@ impl Manager {
             let _ = self.db().set_file(rec.id, &format!("{stem}.{ext}"), None);
             self.emit_record(rec.id);
         }
+        // Refuse up front when the drive can't hold the video twice (pieces +
+        // joined file) rather than failing after hours of downloading.
+        let dir = Path::new(&rec.dest_dir);
+        let expected = rec
+            .page_url
+            .as_deref()
+            .and_then(|page| self.video_cache.peek(page))
+            .and_then(|info| info.choices.into_iter().find(|c| Some(c.id.as_str()) == rec.video_format.as_deref()))
+            .and_then(|c| c.size)
+            .or(rec.size);
+        if let (Some(size), Some(free)) = (expected, video::free_space(dir)) {
+            let needed = video::space_needed(size, video::bytes_on_disk(dir, &stem));
+            if free < needed {
+                return Err(anyhow!(video::not_enough_space(dir, needed, free)));
+            }
+        }
         let job = VideoJob {
             url: &rec.url,
             headers: &rec.headers,
@@ -275,6 +291,23 @@ impl Manager {
                 Ok(Finish::Completed { path, bytes })
             }
             Ok(None) => Ok(Finish::Paused { downloaded: last.downloaded, total: last.total }),
+            Err(e) if video::is_postprocess_failure(&e) => {
+                // Joining failed, usually for lack of space. yt-dlp leaves its
+                // half-joined `<stem>.temp.*` behind: useless, and as big as the
+                // video, so give that space back. The downloaded pieces stay
+                // so Try again only has to join them.
+                let temp = format!("{stem}.temp.");
+                for f in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                    if f.file_name().to_string_lossy().starts_with(&temp) {
+                        let _ = std::fs::remove_file(f.path());
+                    }
+                }
+                let pieces = video::bytes_on_disk(dir, &stem);
+                match video::free_space(dir) {
+                    Some(free) if free < pieces + (512 << 20) => Err(anyhow!(video::ran_out_while_joining(dir, pieces + (512 << 20), free))),
+                    _ => Err(anyhow!(e)),
+                }
+            }
             Err(e) => Err(anyhow!(e)),
         }
     }
