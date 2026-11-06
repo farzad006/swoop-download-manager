@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -36,7 +37,7 @@ pub struct Manager {
     pub video_cache: video::InfoCache,
     /// At most two lookups run in advance at once.
     prefetch_slots: Arc<tokio::sync::Semaphore>,
-    prefetch_waiting: std::sync::atomic::AtomicUsize,
+    prefetch_waiting: AtomicUsize,
 }
 
 impl Manager {
