@@ -84,7 +84,7 @@ export function installMockBackend() {
   const label = location.hash.startsWith("#/progress") ? "progress-1" : "main";
   mockWindows(label);
   mockIPC(
-    (cmd, args: any) => {
+    async (cmd, args: any) => {
       switch (cmd) {
         case "list_downloads":
           return location.search.includes("empty") ? [] : downloads;
@@ -117,11 +117,22 @@ export function installMockBackend() {
           return structuredClone(browsers);
         case "get_pending":
           return location.hash.startsWith("#/video")
-            ? { type: "video", pageUrl: "https://videos.example.com/watch?v=abc", title: "Big Buck Bunny", streams: [] }
+            ? {
+                type: "video",
+                pageUrl: "https://videos.example.com/watch?v=abc",
+                title: "Big Buck Bunny",
+                // What the browser was playing, plus a short hover preview that's left out.
+                streams: [
+                  { url: "https://cdn.example.com/media/659700/659700.mp4", kind: "file", mime: "video/mp4", size: null },
+                  { url: "https://cdn.example.com/previews/659701.mp4", kind: "file", mime: "video/mp4", size: 400_000 },
+                ],
+              }
             : { type: "download", url: "https://github.com/videolan/vlc/releases/download/4.0.0/vlc-4.0.0-win64.zip", fileName: null, fileSize: null };
         case "probe_url":
           return { fileName: "vlc-4.0.0-win64.zip", size: 52_428_800, resumable: true, contentType: "application/zip", finalUrl: args.url, category: "Compressed", destDir: `${settings.downloadRoot}\\Compressed` };
         case "video_info":
+          // ?slow=1: a site where yt-dlp takes a while.
+          if (new URLSearchParams(location.search).has("slow")) await new Promise((r) => setTimeout(r, 6000));
           return {
             info: {
               title: "Big Buck Bunny",

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Clock, Download, Film, Loader2, Music, ShieldAlert } from "lucide-react";
-import { api, fmtBytes, MAIN_QUEUE, VideoChoice, VideoInfoResult } from "../api";
+import { api, fmtBytes, MAIN_QUEUE, MediaStream, VideoChoice, VideoInfoResult } from "../api";
 import { Badge, Button, Check, Field, FolderInput, TextInput } from "../components/ui";
 
 function safeName(s: string) {
@@ -20,6 +20,20 @@ function qualityName(c: VideoChoice): { title: string; sub: string } {
   return { title: "Small", sub: `${h}p, smallest file` };
 }
 
+function fileNameOf(url: string) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop() || url);
+  } catch {
+    return url;
+  }
+}
+
+/** Whole video files from the page, without the short hover previews many
+ *  video sites play (they're small); the one the clicked player shows comes first. */
+export function likelyVideos(streams: MediaStream[]): MediaStream[] {
+  return streams.filter((s) => s.kind === "file" && (s.size == null || s.size >= 2_000_000)).slice(0, 3);
+}
+
 /** Quality picker for "Download this video". */
 export default function Video({ token }: { token: string }) {
   const [res, setRes] = useState<VideoInfoResult | null>(null);
@@ -31,6 +45,21 @@ export default function Video({ token }: { token: string }) {
   const [remember, setRemember] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const win = getCurrentWindow();
+
+  // Files the browser already loaded while playing (the playing one first),
+  // offered straight away while yt-dlp looks for every quality.
+  const [playing, setPlaying] = useState<MediaStream[]>([]);
+  const [pageTitle, setPageTitle] = useState("");
+  useEffect(() => {
+    api
+      .pending(token)
+      .then((p) => {
+        if (p.type !== "video") return;
+        setPlaying(likelyVideos(p.streams));
+        setPageTitle(p.title ?? "");
+      })
+      .catch(() => {});
+  }, [token]);
 
   useEffect(() => {
     api
@@ -79,8 +108,11 @@ export default function Video({ token }: { token: string }) {
   };
 
   const addDirect = async (url: string) => {
-    const fromUrl = decodeURIComponent(new URL(url).pathname.split("/").pop() || "");
-    const fileName = fromUrl.includes(".") ? fromUrl : `${name || "video"}.mp4`;
+    // Named after the video's title when known: links are often just "659700.mp4".
+    const fromUrl = fileNameOf(url);
+    const urlExt = fromUrl.match(/\.(mp4|webm|mkv|mov|m4v|flv|3gp|ts)$/i)?.[0] ?? ".mp4";
+    const title = name || pageTitle;
+    const fileName = title ? safeName(title) + urlExt : fromUrl.includes(".") ? fromUrl : "video.mp4";
     try {
       const p = await api.placement(fileName);
       await api.addStreamDirect({ token, url, fileName, destDir: p.destDir, start: true });
@@ -92,12 +124,32 @@ export default function Video({ token }: { token: string }) {
 
   if (!res && !loadErr) {
     return (
-      <div className="h-full grid place-items-center bg-surface text-muted">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto mb-3 text-accent" size={28} />
-          <div className="font-medium text-fg">Looking at the video…</div>
-          <div className="text-[12.5px] mt-0.5">This takes a few seconds.</div>
+      <div className="h-full flex flex-col bg-surface text-muted">
+        <div className="flex-1 grid place-items-center">
+          <div className="text-center">
+            <Loader2 className="animate-spin mx-auto mb-3 text-accent" size={28} />
+            <div className="font-medium text-fg">{playing.length ? "Looking for every quality…" : "Looking at the video…"}</div>
+            <div className="text-[12.5px] mt-0.5">This takes a few seconds.</div>
+          </div>
         </div>
+        {playing.length > 0 && (
+          <div className="px-6 pb-5">
+            <div className="font-medium text-fg mb-1">Don't want to wait?</div>
+            <div className="text-[12.5px] mb-2">Download the video your browser is playing, in the quality it's playing.</div>
+            <div className="border border-line rounded-xl divide-y divide-line">
+              {playing.map((s, i) => (
+                <div key={s.url} className="flex items-center gap-2 h-11 px-3">
+                  <Film size={15} className="text-rose-500 shrink-0" />
+                  <span className="flex-1 truncate text-[12.5px] text-fg" title={s.url}>{fileNameOf(s.url)}</span>
+                  {i === 0 && playing.length > 1 && <Badge tone="accent">Playing</Badge>}
+                  <span className="text-[12px]">{fmtBytes(s.size ?? null)}</span>
+                  <Button size="sm" variant={i === 0 ? "primary" : undefined} icon={Download} onClick={() => addDirect(s.url)}>Download</Button>
+                </div>
+              ))}
+            </div>
+            {err && <div className="text-danger pt-2">{err}</div>}
+          </div>
+        )}
       </div>
     );
   }

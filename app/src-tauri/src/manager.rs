@@ -36,6 +36,7 @@ pub struct Manager {
     pub video_cache: video::InfoCache,
     /// At most two lookups run in advance at once.
     prefetch_slots: Arc<tokio::sync::Semaphore>,
+    prefetch_waiting: std::sync::atomic::AtomicUsize,
 }
 
 impl Manager {
@@ -61,6 +62,7 @@ impl Manager {
             browser_selection: Mutex::new(Vec::new()),
             video_cache: video::InfoCache::new(Duration::from_secs(600)),
             prefetch_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            prefetch_waiting: Default::default(),
         }))
     }
 
@@ -494,10 +496,23 @@ impl Manager {
         if !self.settings().video_prefetch || self.video_cache.is_known(&cap.page_url) {
             return;
         }
-        let Ok(permit) = self.prefetch_slots.clone().try_acquire_owned() else { return };
+        // Two lookups at a time; the rest wait their turn rather than being
+        // dropped (opening several video tabs at once used to leave most of
+        // them to a slow lookup on click). A long backlog is cut off instead.
+        const MAX_WAITING: usize = 8;
+        if self.prefetch_slots.available_permits() == 0 && self.prefetch_waiting.load(Ordering::Relaxed) >= MAX_WAITING {
+            return;
+        }
+        self.prefetch_waiting.fetch_add(1, Ordering::Relaxed);
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
-            let _permit = permit;
+            let permit = me.prefetch_slots.clone().acquire_owned().await;
+            me.prefetch_waiting.fetch_sub(1, Ordering::Relaxed);
+            let Ok(_permit) = permit else { return };
+            // A click may have looked it up while this waited.
+            if me.video_cache.is_known(&cap.page_url) {
+                return;
+            }
             let cookies = me.cookies_file(&format!("prefetch-{:x}", rand_token()), &cap.cookies);
             let _ = me.video_info(&cap, cookies.as_deref()).await;
             if let Some(c) = cookies {
