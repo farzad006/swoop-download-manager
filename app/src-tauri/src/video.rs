@@ -137,6 +137,14 @@ pub fn is_missing_formats(err: &str) -> bool {
     ["requested format is not available", "only images are available", "no video formats found"].iter().any(|k| e.contains(k))
 }
 
+/// Errors where leaving out the browser's cookies may help: missing formats
+/// (above), and a site refusing the page outright. Cookies a browser got
+/// through its own VPN (Opera's) are tied to that connection, and PornHub
+/// answers them with "403 Forbidden" from the PC's own connection.
+pub fn signed_out_may_help(err: &str) -> bool {
+    is_missing_formats(err) || err.to_ascii_lowercase().contains("http error 403")
+}
+
 /// The other side (or something in between) reset the connection.
 fn is_reset(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
@@ -219,7 +227,7 @@ pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<
                 retry.succeeded();
                 return Ok(i);
             }
-            Err(e) if signed_in && has_login(headers, cookies_file) && is_missing_formats(&e) => signed_in = false,
+            Err(e) if signed_in && has_login(headers, cookies_file) && signed_out_may_help(&e) => signed_in = false,
             Err(e) if !repaired && is_broken_install(&e) => {
                 repaired = true;
                 if !repair_ytdlp().await {
@@ -457,7 +465,7 @@ pub async fn download(
                 return Ok(r);
             }
             // Nothing downloadable while signed in: try once more without cookies.
-            Err(e) if signed_in && has_login(job.headers, job.cookies_file) && is_missing_formats(&e) => signed_in = false,
+            Err(e) if signed_in && has_login(job.headers, job.cookies_file) && signed_out_may_help(&e) => signed_in = false,
             Err(e) if !repaired && is_broken_install(&e) => {
                 repaired = true;
                 if !repair_ytdlp().await {
@@ -946,6 +954,15 @@ ModuleNotFoundError: No module named 'yt_dlp'"#;
         assert!(is_missing_formats("WARNING: Only images are available for download."));
         assert!(!is_missing_formats("ERROR: Video unavailable"));
         assert!(!is_transient("Requested format is not available"), "not a network problem");
+    }
+
+    #[test]
+    fn a_refused_page_is_retried_without_cookies() {
+        let refused = "[PornHub] 673a15d14b432: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)";
+        assert!(signed_out_may_help(refused));
+        assert!(signed_out_may_help("[youtube] x: Requested format is not available"));
+        assert!(!signed_out_may_help("ERROR: Video unavailable"));
+        assert!(!signed_out_may_help("[generic] index-v1-a1: HTTP Error 410: Gone"));
     }
 
     #[test]

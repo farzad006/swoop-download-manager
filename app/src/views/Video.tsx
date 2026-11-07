@@ -82,7 +82,8 @@ export default function Video({ token }: { token: string }) {
     api.placement(`x${ext}`).then((p) => setDir(p.destDir));
   }, [ext]);
 
-  const directFiles = (res?.streams ?? []).filter((s) => s.kind === "file");
+  // Short hover previews (a few hundred KB) are left out, as above.
+  const directFiles = likelyVideos(res?.streams ?? []);
   const drm = res?.error?.includes("DRM");
 
   const close = async () => {
