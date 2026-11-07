@@ -4113,7 +4113,7 @@ dependencies = [
 
 [[package]]
 name = "swoop"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "anyhow",
  "chrono",

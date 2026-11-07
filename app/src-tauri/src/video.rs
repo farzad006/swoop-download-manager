@@ -107,6 +107,9 @@ pub fn is_transient(err: &str) -> bool {
         "unexpected_eof",
         "eof occurred in violation of protocol",
         "connection reset",
+        "connection was reset",
+        "recv failure",
+        "winerror 10054",
         "connection aborted",
         "remote end closed connection",
         "timed out",
@@ -124,6 +127,12 @@ pub fn is_transient(err: &str) -> bool {
 pub fn is_missing_formats(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
     ["requested format is not available", "only images are available", "no video formats found"].iter().any(|k| e.contains(k))
+}
+
+/// The other side (or something in between) reset the connection.
+fn is_reset(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    ["connection reset", "connection was reset", "winerror 10054"].iter().any(|k| e.contains(k))
 }
 
 /// Hosts where IPv4 rescued a dropped connection; later requests go straight to IPv4.
@@ -174,6 +183,15 @@ impl NetworkRetry {
             return err;
         }
         let site = self.host.as_deref().map(|h| h.trim_start_matches("www.")).unwrap_or("the site");
+        if is_reset(&err) {
+            // Cut off at once, every time: in India (and elsewhere) that's how
+            // internet providers block sites. A browser can still get through
+            // with its own VPN (Opera's, for example), which Swoop can't use.
+            return format!(
+                "Your internet provider seems to block {site}: the connection was cut off every time ({} tries). If your browser shows the site, it's probably using its own VPN, which Swoop can't use. Turn on a VPN for the whole PC (for example Cloudflare WARP in WARP mode, not DNS-only) or set a proxy in Settings → Advanced, then try again.",
+                self.attempt
+            );
+        }
         format!("The connection to {site} kept dropping (tried {} times). Check your internet or VPN, then try again.", self.attempt)
     }
 }
@@ -930,6 +948,24 @@ ModuleNotFoundError: No module named 'yt_dlp'"#;
         assert!(!is_transient("This video is DRM-protected and can't be downloaded."));
         assert!(!is_transient("ERROR: [generic] Unsupported URL: https://example.com"));
         assert!(!is_transient("ERROR: Video unavailable"));
+    }
+
+    /// What yt-dlp reported for pornhub.com, which his provider blocks.
+    const BLOCKED: &str = "[PornHub] 6ae541d0bd207: Unable to download webpage: Failed to perform, curl: (35) Recv failure: Connection was reset. See https://curl.se/libcurl/c/libcurl-errors.html first for more details. (caused by SSLError('Failed to perform, curl: (35) Recv failure: Connection was reset.'))";
+
+    #[test]
+    fn a_site_cut_off_every_time_is_explained_as_blocked() {
+        let mut r = NetworkRetry::new("https://www.retry-test-blocked.example/view_video.php?viewkey=1");
+        assert!(r.should_retry(BLOCKED).is_some(), "a reset can be a one-off: retried");
+        assert!(r.should_retry(BLOCKED).is_some());
+        assert!(r.should_retry(BLOCKED).is_none());
+        let msg = r.give_up_message(BLOCKED.to_string());
+        assert!(msg.contains("retry-test-blocked.example") && msg.contains("block") && msg.contains("VPN") && msg.contains("3 tries"), "{msg}");
+
+        // Other dropped connections keep the general message.
+        let mut r = NetworkRetry::new("https://www.retry-test-e.example/v");
+        while r.should_retry(SSL_EOF).is_some() {}
+        assert!(r.give_up_message(SSL_EOF.to_string()).contains("kept dropping"));
     }
 
     #[test]
