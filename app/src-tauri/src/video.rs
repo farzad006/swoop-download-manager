@@ -90,6 +90,14 @@ const BROKEN_INSTALL: &str =
 pub fn friendly_error(stderr: &str) -> String {
     let last = stderr.lines().rev().find(|l| l.starts_with("ERROR:")).or_else(|| stderr.lines().rev().find(|l| !l.trim().is_empty()));
     let msg = last.unwrap_or("yt-dlp failed").trim_start_matches("ERROR:").trim().to_string();
+    // Some sites list their files in a second request; when that one drops,
+    // yt-dlp only warns and then finds no formats. The warning is the real
+    // cause (and worth a retry).
+    if msg.contains("No video formats found") {
+        if let Some(w) = stderr.lines().find(|l| l.starts_with("WARNING:") && is_transient(l)) {
+            return w.trim_start_matches("WARNING:").trim().to_string();
+        }
+    }
     if msg.contains("DRM") {
         "This video is DRM-protected and can't be downloaded.".into()
     } else if msg.contains("Unsupported URL") {
@@ -143,26 +151,32 @@ static IPV4_HOSTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSe
 /// servers cut off a share of connections (seen over VPN tunnels such as
 /// Cloudflare WARP) while IPv4 works; browsers hide this by retrying, yt-dlp
 /// doesn't. Up to 3 attempts, switching to IPv4 after the first failure and
-/// remembering hosts where that helped.
+/// remembering hosts where that helped. Connections that are reset get more
+/// attempts: some providers (Jio, seen 2026-11) reset a random quarter of
+/// connections to certain sites, and a lookup makes several.
 pub struct NetworkRetry {
     host: Option<String>,
     pub ipv4: bool,
     started_ipv4: bool,
     attempt: u32,
+    all_reset: bool,
 }
 
 impl NetworkRetry {
     pub const MAX_ATTEMPTS: u32 = 3;
+    pub const RESET_ATTEMPTS: u32 = 6;
 
     pub fn new(url: &str) -> Self {
         let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned));
         let ipv4 = host.as_ref().is_some_and(|h| IPV4_HOSTS.lock().unwrap().contains(h));
-        Self { host, ipv4, started_ipv4: ipv4, attempt: 1 }
+        Self { host, ipv4, started_ipv4: ipv4, attempt: 1, all_reset: true }
     }
 
     /// After a failed attempt: how long to wait before trying again, or `None` to give up.
     pub fn should_retry(&mut self, err: &str) -> Option<std::time::Duration> {
-        if !is_transient(err) || self.attempt >= Self::MAX_ATTEMPTS {
+        self.all_reset &= is_reset(err);
+        let max = if is_reset(err) { Self::RESET_ATTEMPTS } else { Self::MAX_ATTEMPTS };
+        if !is_transient(err) || self.attempt >= max {
             return None;
         }
         self.attempt += 1;
@@ -183,7 +197,7 @@ impl NetworkRetry {
             return err;
         }
         let site = self.host.as_deref().map(|h| h.trim_start_matches("www.")).unwrap_or("the site");
-        if is_reset(&err) {
+        if self.all_reset && is_reset(&err) {
             // Cut off at once, every time: in India (and elsewhere) that's how
             // internet providers block sites. A browser can still get through
             // with its own VPN (Opera's, for example), which Swoop can't use.
@@ -341,20 +355,31 @@ impl InfoCache {
 /// Looks up a page's video: the page first, then any stream manifests the
 /// extension spotted. Stops early on DRM (nothing else will work).
 pub async fn extract(page_url: &str, manifests: &[String], headers: &[(String, String)], cookies_file: Option<&str>) -> InfoResult {
-    let mut error = String::from("No downloadable video was found on this page.");
+    let mut error = None;
     for url in std::iter::once(page_url.to_string()).chain(manifests.iter().cloned()) {
         match info(&url, headers, cookies_file).await {
             Ok(i) => return Ok((i, url)),
             Err(e) => {
                 let drm = e.contains("DRM");
-                error = e;
+                error = Some(keep_error(error, e));
                 if drm {
                     break;
                 }
             }
         }
     }
-    Err(error)
+    Err(error.unwrap_or_else(|| "No downloadable video was found on this page.".into()))
+}
+
+/// Which error to show when the page and the streams the browser played all
+/// fail. The page's own error says most: a stream address often only works
+/// for the browser (signed for its connection, or already expired → "410
+/// Gone"). A DRM verdict from any of them wins.
+fn keep_error(page: Option<String>, next: String) -> String {
+    match page {
+        Some(p) if !next.contains("DRM") => p,
+        _ => next,
+    }
 }
 
 /// yt-dlp arguments selecting the quality the user picked.
@@ -956,16 +981,53 @@ ModuleNotFoundError: No module named 'yt_dlp'"#;
     #[test]
     fn a_site_cut_off_every_time_is_explained_as_blocked() {
         let mut r = NetworkRetry::new("https://www.retry-test-blocked.example/view_video.php?viewkey=1");
-        assert!(r.should_retry(BLOCKED).is_some(), "a reset can be a one-off: retried");
-        assert!(r.should_retry(BLOCKED).is_some());
-        assert!(r.should_retry(BLOCKED).is_none());
+        let mut tries = 1;
+        while r.should_retry(BLOCKED).is_some() {
+            tries += 1;
+        }
+        assert!(tries > NetworkRetry::MAX_ATTEMPTS, "resets are often random: retried more than other drops");
+        assert_eq!(tries, NetworkRetry::RESET_ATTEMPTS);
         let msg = r.give_up_message(BLOCKED.to_string());
-        assert!(msg.contains("retry-test-blocked.example") && msg.contains("block") && msg.contains("VPN") && msg.contains("3 tries"), "{msg}");
+        let n = format!("{tries} tries");
+        assert!(msg.contains("retry-test-blocked.example") && msg.contains("block") && msg.contains("VPN") && msg.contains(&n), "{msg}");
 
         // Other dropped connections keep the general message.
         let mut r = NetworkRetry::new("https://www.retry-test-e.example/v");
         while r.should_retry(SSL_EOF).is_some() {}
         assert!(r.give_up_message(SSL_EOF.to_string()).contains("kept dropping"));
+
+        // Only some tries reset: the connection is flaky, not blocked.
+        let mut r = NetworkRetry::new("https://www.retry-test-f.example/v");
+        assert!(r.should_retry(SSL_EOF).is_some());
+        while r.should_retry(BLOCKED).is_some() {}
+        let msg = r.give_up_message(BLOCKED.to_string());
+        assert!(msg.contains("kept dropping") && !msg.contains("block"), "{msg}");
+    }
+
+    /// yt-dlp's output when pornhub.com's file list request was reset (2026-11-07).
+    const NO_FORMATS_AFTER_RESET: &str = r#"WARNING: [PornHub] 64d4a599b042b: Failed to download m3u8 information: HTTP Error 410: Gone
+WARNING: [PornHub] 64d4a599b042b: Unable to download JSON metadata: Failed to perform, curl: (35) Recv failure: Connection was reset. See https://curl.se/libcurl/c/libcurl-errors.html first for more details.
+ERROR: [PornHub] 64d4a599b042b: No video formats found!; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+"#;
+
+    #[test]
+    fn no_formats_after_a_dropped_request_is_retried() {
+        let e = friendly_error(NO_FORMATS_AFTER_RESET);
+        assert!(is_transient(&e) && is_reset(&e), "{e}");
+        assert!(NetworkRetry::new("https://www.retry-test-g.example/v").should_retry(&e).is_some());
+
+        // Without a dropped request, "no formats" is the site's answer.
+        let plain = "ERROR: [generic] x: No video formats found!\n";
+        assert!(friendly_error(plain).contains("No video formats found") && !is_transient(&friendly_error(plain)));
+    }
+
+    #[test]
+    fn the_pages_error_beats_a_played_streams_error() {
+        let page = "Your internet provider seems to block example.com".to_string();
+        assert_eq!(keep_error(None, page.clone()), page);
+        assert_eq!(keep_error(Some(page.clone()), "[generic] index-v1-a1: HTTP Error 410: Gone".into()), page);
+        let drm = "This video is DRM-protected and can't be downloaded.".to_string();
+        assert_eq!(keep_error(Some(page), drm.clone()), drm);
     }
 
     #[test]
