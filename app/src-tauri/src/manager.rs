@@ -153,7 +153,13 @@ impl Manager {
         let me = self.clone();
         tauri::async_runtime::spawn(async move {
             let result = match rec.kind {
-                Kind::Http => me.run_http(&rec, cancel).await,
+                Kind::Http => match me.run_http(&rec, cancel.clone()).await {
+                    Err(e) if e.to_string().starts_with("link expired") => match me.refresh_from_page(&rec).await {
+                        Some(video) => me.run_video(&video, cancel).await,
+                        None => Err(e),
+                    },
+                    r => r,
+                },
                 Kind::Video => me.run_video(&rec, cancel).await,
             };
             me.finish(&rec, result);
@@ -221,6 +227,24 @@ impl Manager {
             Ok(_) => Ok(Finish::Paused { downloaded: p.downloaded, total: p.total }),
             Err(e) => Err(anyhow!(e.to_string())),
         }
+    }
+
+    /// A direct link the browser handed over expired: video sites sign them
+    /// for a few hours, and a tab left open overnight still offers its old
+    /// one (PornHub's servers then answer 472). When Swoop knows the page it
+    /// came from, download from the page instead, in the same quality, and
+    /// keep it that way for Try again. `None` (page unreadable) leaves the
+    /// download as it was.
+    async fn refresh_from_page(&self, rec: &DownloadRecord) -> Option<DownloadRecord> {
+        let page = rec.page_url.as_deref().filter(|p| *p != rec.url && p.starts_with("http"))?;
+        let info = video::info(page, &rec.headers, rec.cookies_file.as_deref()).await.ok()?;
+        let choice = video::height_hint(&rec.url)
+            .map(|h| format!("h{h}"))
+            .filter(|c| info.choices.iter().any(|x| &x.id == c))
+            .unwrap_or_else(|| "best".into());
+        self.db().to_video(rec.id, page, &choice).ok()?;
+        self.emit_record(rec.id);
+        self.db().get(rec.id).ok().flatten()
     }
 
     async fn run_video(&self, rec: &DownloadRecord, cancel: CancellationToken) -> Result<Finish> {

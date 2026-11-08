@@ -4,7 +4,7 @@ use anyhow::Result;
 use swoop_engine::Status;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::model::{AfterQueue, DownloadRecord, MAIN_QUEUE, NewDownload, Queue, Settings};
+use crate::model::{AfterQueue, DownloadRecord, Kind, MAIN_QUEUE, NewDownload, Queue, Settings};
 
 pub struct Db {
     conn: Connection,
@@ -174,6 +174,16 @@ impl Db {
         Ok(())
     }
 
+    /// Turns a direct-link download into a video download from its page
+    /// (after the link expired). Progress restarts: yt-dlp keeps its own pieces.
+    pub fn to_video(&self, id: i64, page_url: &str, choice: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE downloads SET kind = ?2, url = ?3, video_format = ?4, downloaded = 0, size = NULL, resumable = 1 WHERE id = ?1",
+            params![id, enum_to_sql(&Kind::Video), page_url, choice],
+        )?;
+        Ok(())
+    }
+
     pub fn set_queue(&self, id: i64, queue_id: Option<i64>) -> Result<()> {
         self.conn.execute("UPDATE downloads SET queue_id = ?2 WHERE id = ?1", params![id, queue_id])?;
         Ok(())
@@ -254,7 +264,6 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Kind;
 
     fn new_dl(name: &str, queue: Option<i64>) -> NewDownload {
         NewDownload {
@@ -288,6 +297,19 @@ mod tests {
         db.set_status(a, Status::Completed, None).unwrap();
         assert_eq!(db.queue_pending(MAIN_QUEUE).unwrap(), vec![b]);
         assert!(db.get(a).unwrap().unwrap().completed_at.is_some());
+    }
+
+    #[test]
+    fn an_expired_link_becomes_a_video_download_from_its_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(&dir.path().join("t.db")).unwrap();
+        let id = db.insert(&new_dl("480P_2000K_1.mp4", None), Status::Queued).unwrap();
+        db.set_progress(id, 5, Some(10)).unwrap();
+        db.to_video(id, "https://example.com/view_video.php?viewkey=1", "h480").unwrap();
+        let r = db.get(id).unwrap().unwrap();
+        assert_eq!((r.kind, r.url.as_str(), r.video_format.as_deref()), (Kind::Video, "https://example.com/view_video.php?viewkey=1", Some("h480")));
+        assert_eq!((r.downloaded, r.size), (0, None), "the old link's progress doesn't carry over");
+        assert_eq!(r.file_name, "480P_2000K_1.mp4", "name kept");
     }
 
     #[test]

@@ -390,6 +390,20 @@ fn keep_error(page: Option<String>, next: String) -> String {
     }
 }
 
+/// The height a video file's name gives away ("480P_2000K_123.mp4",
+/// "clip-720p.mp4"), to download the same quality from its page.
+pub fn height_hint(url: &str) -> Option<u32> {
+    let name = url.split(['?', '#']).next()?.rsplit('/').next()?;
+    let b = name.as_bytes();
+    (0..b.len()).filter(|&i| b[i] == b'p' || b[i] == b'P').find_map(|i| {
+        let start = (0..i).rev().take_while(|&j| b[j].is_ascii_digit()).last()?;
+        let ends_word = b.get(i + 1).is_none_or(|c| !c.is_ascii_alphanumeric());
+        let starts_word = start == 0 || !b[start - 1].is_ascii_alphanumeric();
+        let h: u32 = name[start..i].parse().ok()?;
+        (ends_word && starts_word && (144..=4320).contains(&h)).then_some(h)
+    })
+}
+
 /// yt-dlp arguments selecting the quality the user picked.
 pub fn format_args(choice: &str, prefer_mp4: bool) -> Vec<String> {
     let sort = |res: Option<&str>| {
@@ -1045,6 +1059,17 @@ ERROR: [PornHub] 64d4a599b042b: No video formats found!; please report this issu
         assert_eq!(keep_error(Some(page.clone()), "[generic] index-v1-a1: HTTP Error 410: Gone".into()), page);
         let drm = "This video is DRM-protected and can't be downloaded.".to_string();
         assert_eq!(keep_error(Some(page), drm.clone()), drm);
+    }
+
+    #[test]
+    fn file_names_give_away_their_height() {
+        assert_eq!(height_hint("https://ev.phncdn.com/c6541/videos/202610/19/66357155/480P_2000K_66357155.mp4?validfrom=1&ip=x"), Some(480));
+        assert_eq!(height_hint("https://cdn.example/clip-720p.mp4"), Some(720));
+        assert_eq!(height_hint("https://cdn.example/1080p"), Some(1080));
+        assert_eq!(height_hint("https://cdn.example/66357155.mp4"), None, "no height in the name");
+        assert_eq!(height_hint("https://cdn.example/video_1080p60.mp4"), None, "not a whole word");
+        assert_eq!(height_hint("https://cdn.example/p/a720p/x.mp4"), None, "only the file name counts");
+        assert_eq!(height_hint("https://cdn.example/12p.mp4"), None, "not a video height");
     }
 
     #[test]

@@ -72,7 +72,8 @@ pub async fn probe(client: &Client, url: &str, headers: &HeaderMap) -> Result<Pr
 
 pub(crate) fn status_error(code: u16) -> Error {
     match code {
-        401 | 403 | 410 => Error::LinkExpired(code),
+        // 472: PornHub's file servers (phncdn) for a signed link past its `validto`.
+        401 | 403 | 410 | 472 => Error::LinkExpired(code),
         _ => Error::Http(code),
     }
 }
