@@ -222,6 +222,30 @@ pub async fn probe(mgr: &Manager, url: &str, headers: &[(String, String)]) -> Re
     swoop_engine::probe(&client, url, &swoop_engine::header_map(headers)).await.map_err(|e| e.to_string())
 }
 
+/// When yt-dlp can't read a video page, look for the video files written into
+/// it ourselves. Sends the page's own Referer: some sites (mydaddy.cc) answer
+/// "This domain has been blocked" to requests without one. Each file is
+/// probed for its size; HTML answers (dead links) are dropped.
+pub async fn videos_on_page(mgr: &Manager, cap: &VideoCapture) -> Vec<MediaStream> {
+    let s = mgr.settings();
+    let opts = swoop_engine::Options { proxy: s.proxy.filter(|p| !p.trim().is_empty()), ..Default::default() };
+    let Ok(client) = swoop_engine::build_client(&opts) else { return vec![] };
+    let headers = swoop_engine::header_map(&cap.headers());
+    let fetch = async { client.get(&cap.page_url).headers(headers.clone()).send().await.ok()?.text().await.ok() };
+    let Ok(Some(html)) = tokio::time::timeout(Duration::from_secs(20), fetch).await else { return vec![] };
+    let mut out = Vec::new();
+    for url in crate::video::videos_in_page(&html, &cap.page_url).into_iter().take(6) {
+        let probed = tokio::time::timeout(Duration::from_secs(8), swoop_engine::probe(&client, &url, &headers)).await;
+        let (size, mime) = match probed {
+            Ok(Ok(p)) if p.content_type.as_deref().is_some_and(|t| t.starts_with("text/")) => continue,
+            Ok(Ok(p)) => (p.size, p.content_type),
+            _ => (None, None),
+        };
+        out.push(MediaStream { url, kind: "file".into(), mime, size });
+    }
+    out
+}
+
 /// True for http(s) URLs whose path ends in one of the capture extensions
 /// (wildcards like `R0*` allowed), used by the clipboard monitor.
 pub fn looks_downloadable(text: &str, extensions: &[String]) -> bool {

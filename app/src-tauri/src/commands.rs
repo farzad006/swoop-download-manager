@@ -233,7 +233,16 @@ pub async fn video_info(mgr: Mgr<'_>, token: String) -> Res<VideoInfoResult> {
         Ok((info, url)) => (Some(info), Some(url), None),
         Err(e) => (None, None, Some(e)),
     };
-    Ok(VideoInfoResult { info, source_url, error, title: cap.title, page_url: cap.page_url, streams: cap.streams })
+    let mut streams = cap.streams.clone();
+    if error.is_some() {
+        // yt-dlp couldn't read the page: offer the video files it links to.
+        for s in capture::videos_on_page(&mgr, &cap).await {
+            if !streams.iter().any(|x| x.url == s.url) {
+                streams.push(s);
+            }
+        }
+    }
+    Ok(VideoInfoResult { info, source_url, error, title: cap.title, page_url: cap.page_url, streams })
 }
 
 #[tauri::command]

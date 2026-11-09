@@ -30,8 +30,8 @@ function fileNameOf(url: string) {
 
 /** Whole video files from the page, without the short hover previews many
  *  video sites play (they're small); the one the clicked player shows comes first. */
-export function likelyVideos(streams: MediaStream[]): MediaStream[] {
-  return streams.filter((s) => s.kind === "file" && (s.size == null || s.size >= 2_000_000)).slice(0, 3);
+export function likelyVideos(streams: MediaStream[], max = 3): MediaStream[] {
+  return streams.filter((s) => s.kind === "file" && (s.size == null || s.size >= 2_000_000)).slice(0, max);
 }
 
 /** Quality picker for "Download this video". */
@@ -83,7 +83,7 @@ export default function Video({ token }: { token: string }) {
   }, [ext]);
 
   // Short hover previews (a few hundred KB) are left out, as above.
-  const directFiles = likelyVideos(res?.streams ?? []);
+  const directFiles = likelyVideos(res?.streams ?? [], 8);
   const drm = res?.error?.includes("DRM");
 
   const close = async () => {
@@ -223,7 +223,7 @@ export default function Video({ token }: { token: string }) {
             <ShieldAlert size={20} className={`${drm ? "text-danger" : "text-warn"} shrink-0`} />
             <div>
               <div className="font-medium">{drm ? "This video is copy-protected" : "Swoop couldn't read this video"}</div>
-              <div className="text-muted text-[12.5px] mt-0.5">{drm ? "Streaming services like Netflix and Disney+ lock their videos (DRM), so they can't be saved." : loadErr ?? res?.error ?? "No downloadable video was found on this page."}</div>
+              <div className="text-muted text-[12.5px] mt-0.5">{drm ? "Streaming services like Netflix and Disney+ lock their videos (DRM), so they can't be saved." : (loadErr ?? res?.error ?? "No downloadable video was found on this page.") + (directFiles.length > 0 ? " You can still download one of the video files below." : "")}</div>
             </div>
           </div>
           {!drm && directFiles.length > 0 && (

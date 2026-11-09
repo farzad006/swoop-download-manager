@@ -133,6 +133,20 @@ export function installMockBackend() {
         case "video_info":
           // ?slow=1: a site where yt-dlp takes a while.
           if (new URLSearchParams(location.search).has("slow")) await new Promise((r) => setTimeout(r, 6000));
+          // ?misread=1: yt-dlp misread the player; Swoop found the files on the page itself.
+          if (new URLSearchParams(location.search).has("misread"))
+            return {
+              info: null,
+              sourceUrl: null,
+              error: "The video downloader couldn't make sense of this page's video player.",
+              title: "Big Buck Bunny",
+              pageUrl: "https://videos.example.com/video/abc/",
+              streams: [
+                { url: "https://s51.cdn.example.com/pubs/6af1.7598/1080.mp4", kind: "file", mime: "video/mp4", size: 859 * MB },
+                { url: "https://s51.cdn.example.com/pubs/6af1.7598/720.mp4", kind: "file", mime: "video/mp4", size: 370 * MB },
+                { url: "https://s51.cdn.example.com/pubs/6af1.7598/360.mp4", kind: "file", mime: "video/mp4", size: 145 * MB },
+              ],
+            };
           return {
             info: {
               title: "Big Buck Bunny",

@@ -260,6 +260,9 @@ async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option
         return Err(friendly_error(&String::from_utf8_lossy(&out.stderr)));
     }
     let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+    if misread_page(&v) {
+        return Err(MISREAD.into());
+    }
     Ok(parse_info(&v))
 }
 
@@ -390,18 +393,67 @@ fn keep_error(page: Option<String>, next: String) -> String {
     }
 }
 
+pub const MISREAD: &str = "The video downloader couldn't make sense of this page's video player.";
+
+/// yt-dlp's generic reader misreads video tags a page writes from a script
+/// (`<source src=\"//cdn/720.mp4\">`): the addresses keep the escaped quotes
+/// and every download then fails ("The extracted extension ('mp4\"') is
+/// unusual"). Seen on mydaddy.cc, 2026-11.
+fn misread_page(v: &Value) -> bool {
+    let bad = |f: &Value| ["url", "ext"].iter().any(|k| f[*k].as_str().is_some_and(|s| s.contains("\\\"")));
+    let any_bad = |e: &Value| e["formats"].as_array().into_iter().flatten().any(bad);
+    any_bad(v) || v["entries"].as_array().into_iter().flatten().any(any_bad)
+}
+
+/// Video file addresses written into a page: links, `<source>` tags, and
+/// ones escaped inside scripts (`\/`, `\"`, `/`). Absolute, without
+/// duplicates, best quality (by name) first.
+pub fn videos_in_page(html: &str, page: &str) -> Vec<String> {
+    let Ok(base) = url::Url::parse(page) else { return vec![] };
+    let text = html.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/").replace("&amp;", "&");
+    let lower = text.to_ascii_lowercase();
+    let stop = |c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '\\' | '<' | '>' | '(' | ')' | '`' | ',' | ';');
+    let mut found: Vec<String> = Vec::new();
+    for ext in [".mp4", ".webm", ".m4v", ".mov", ".mkv"] {
+        for (at, _) in lower.match_indices(ext) {
+            let after = at + ext.len();
+            match text[after..].chars().next() {
+                None => {}
+                Some(c) if stop(c) || c == '?' || c == '#' => {}
+                Some(_) => continue, // ".mp4a", ".mp4/…": not the end of a file name
+            }
+            let start = text[..at].char_indices().rev().find(|&(_, c)| stop(c)).map_or(0, |(i, c)| i + c.len_utf8());
+            let end = text[after..].char_indices().find(|&(_, c)| stop(c)).map_or(text.len(), |(i, _)| after + i);
+            let raw = &text[start..end];
+            if !raw.contains('/') {
+                continue; // a bare "clip.mp4" in the page's text
+            }
+            let Ok(u) = base.join(raw) else { continue };
+            if matches!(u.scheme(), "http" | "https") && !found.contains(&u.to_string()) {
+                found.push(u.to_string());
+            }
+        }
+    }
+    found.sort_by_key(|u| std::cmp::Reverse(height_hint(u).unwrap_or(0)));
+    found
+}
+
 /// The height a video file's name gives away ("480P_2000K_123.mp4",
-/// "clip-720p.mp4"), to download the same quality from its page.
+/// "clip-720p.mp4", or just "1080.mp4"), to download the same quality from
+/// its page and to list the best file first.
 pub fn height_hint(url: &str) -> Option<u32> {
     let name = url.split(['?', '#']).next()?.rsplit('/').next()?;
     let b = name.as_bytes();
-    (0..b.len()).filter(|&i| b[i] == b'p' || b[i] == b'P').find_map(|i| {
+    let tagged = (0..b.len()).filter(|&i| b[i] == b'p' || b[i] == b'P').find_map(|i| {
         let start = (0..i).rev().take_while(|&j| b[j].is_ascii_digit()).last()?;
         let ends_word = b.get(i + 1).is_none_or(|c| !c.is_ascii_alphanumeric());
         let starts_word = start == 0 || !b[start - 1].is_ascii_alphanumeric();
         let h: u32 = name[start..i].parse().ok()?;
         (ends_word && starts_word && (144..=4320).contains(&h)).then_some(h)
-    })
+    });
+    // A bare number counts only if it's a usual video height (not "66357155").
+    const HEIGHTS: [u32; 10] = [144, 240, 360, 480, 540, 720, 1080, 1440, 2160, 4320];
+    tagged.or_else(|| name.split('.').next()?.parse().ok().filter(|h| HEIGHTS.contains(h)))
 }
 
 /// yt-dlp arguments selecting the quality the user picked.
@@ -1070,6 +1122,43 @@ ERROR: [PornHub] 64d4a599b042b: No video formats found!; please report this issu
         assert_eq!(height_hint("https://cdn.example/video_1080p60.mp4"), None, "not a whole word");
         assert_eq!(height_hint("https://cdn.example/p/a720p/x.mp4"), None, "only the file name counts");
         assert_eq!(height_hint("https://cdn.example/12p.mp4"), None, "not a video height");
+        assert_eq!(height_hint("https://s51.cdn.example/pubs/6af1.7598/1080.mp4"), Some(1080), "a bare usual height");
+        assert_eq!(height_hint("https://cdn.example/1234.mp4"), None, "a bare number that isn't a usual height");
+    }
+
+    /// How mydaddy.cc writes its player (2026-11): `<source>` tags escaped
+    /// inside a script, plus plain download links.
+    const SCRIPTED_PLAYER: &str = r#"<script>document.write("<video controls><source src=\"//s51.cdn.example/pubs/6af1.7598/360.mp4\" title=\"360p\" type=\"video/mp4\" /><source src=\"//s51.cdn.example/pubs/6af1.7598/720.mp4\" title=\"720p HD\" type=\"video/mp4\" /><source src=\"//s51.cdn.example/pubs/6af1.7598/1080.mp4\" title=\"1080p\" type=\"video/mp4\" /></video>");</script>
+<p>download it: <a href='//s51.cdn.example/pubs/6af1.7598/360.mp4'>360p</a> : <a href='//s51.cdn.example/pubs/6af1.7598/720.mp4'>720p HD</a> : <a href='//s51.cdn.example/pubs/6af1.7598/1080.mp4'>1080p</a></p>
+<script>var cfg = {"preview":"https:\/\/img.example\/thumbs\/clip-240p.mp4?t=1&amp;x=2","name":"clip.mp4","codec":"avc1.mp4a"};</script>
+<a href="/videos/other.mp4/">a page, not a file</a>"#;
+
+    #[test]
+    fn finds_the_video_files_a_page_links_to_best_first() {
+        let found = videos_in_page(SCRIPTED_PLAYER, "https://site.example/video/abc/");
+        assert_eq!(
+            found,
+            vec![
+                "https://s51.cdn.example/pubs/6af1.7598/1080.mp4",
+                "https://s51.cdn.example/pubs/6af1.7598/720.mp4",
+                "https://s51.cdn.example/pubs/6af1.7598/360.mp4",
+                "https://img.example/thumbs/clip-240p.mp4?t=1&x=2",
+            ],
+            "escaped and plain links found once each; a bare name, codec string and page path left out"
+        );
+        assert!(videos_in_page("<p>nothing here</p>", "https://site.example/").is_empty());
+        assert!(videos_in_page(SCRIPTED_PLAYER, "not a url").is_empty());
+    }
+
+    #[test]
+    fn a_misread_player_is_not_offered_as_a_video() {
+        let misread = serde_json::json!({"_type": "playlist", "extractor": "generic", "entries": [
+            {"formats": [{"url": "https://site.example/video/abc/\\\"\\\"", "ext": "unknown_video"}]},
+            {"formats": [{"url": "https://site.example/video/abc/\\\"/s51.cdn.example/720.mp4\\\"", "ext": "mp4\\\""}]},
+        ]});
+        assert!(misread_page(&misread));
+        let fine = serde_json::json!({"formats": [{"url": "https://cdn.example/720.mp4", "ext": "mp4"}]});
+        assert!(!misread_page(&fine));
     }
 
     #[test]
