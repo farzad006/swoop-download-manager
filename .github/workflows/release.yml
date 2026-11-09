@@ -40,8 +40,24 @@ jobs:
           npm --prefix app run build
           cargo test --workspace
 
+      # Tauri downloads its installer tools (NSIS and plugins) from GitHub on
+      # every build; keep them between releases.
+      - uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: tauri-tools-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+
+      # One retry: 1.0.15 and 1.0.17 failed here once with code that built fine
+      # on the next run. The second attempt reuses the compiled code.
       - name: Build installer (also builds swoop-host and the extension)
-        run: npm --prefix app run installer
+        shell: pwsh
+        run: |
+          npm --prefix app run installer
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::Installer build failed; trying once more"
+            npm --prefix app run installer
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
 
       - name: Check file details (code signing requires matching name and version)
         shell: pwsh
