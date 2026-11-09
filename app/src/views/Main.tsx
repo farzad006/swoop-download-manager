@@ -64,6 +64,13 @@ function statusGroup(s: Status): StatusKey {
   return s as StatusKey;
 }
 
+/** Whether a download belongs to a sidebar section. */
+function inFilter(d: Download, f: Filter, p?: Progress): boolean {
+  if (f.kind === "category") return d.category === f.key;
+  if (f.kind === "queue") return d.queueId === f.id && d.status !== "completed";
+  return f.key === "all" || statusGroup(effective(d, p)) === f.key;
+}
+
 export default function Main() {
   const toast = useToast();
   const [downloads, setDownloads] = useState<Map<number, Download>>(new Map());
@@ -79,6 +86,7 @@ export default function Main() {
   const [dialog, setDialog] = useState<null | "settings" | "scheduler" | "delete" | "fix">(null);
   const [settingsTab, setSettingsTab] = useState<string | undefined>();
   const [menu, setMenu] = useState<{ x: number; y: number; ids: number[] } | null>(null);
+  const [navMenu, setNavMenu] = useState<{ x: number; y: number; f: Filter } | null>(null);
   const [fixTarget, setFixTarget] = useState<Download | null>(null);
   const [dragging, setDragging] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -139,9 +147,7 @@ export default function Main() {
     const q = query.trim().toLowerCase();
     const list = all.filter((d) => {
       if (q && !d.fileName.toLowerCase().includes(q) && !d.url.toLowerCase().includes(q)) return false;
-      if (filter.kind === "category") return d.category === filter.key;
-      if (filter.kind === "queue") return d.queueId === filter.id && d.status !== "completed";
-      return filter.key === "all" || statusGroup(effective(d, progress.get(d.id))) === filter.key;
+      return inFilter(d, filter, progress.get(d.id));
     });
     list.sort((a, b) =>
       sort === "name" ? a.fileName.localeCompare(b.fileName) : sort === "size" ? (b.size ?? 0) - (a.size ?? 0) : b.addedAt - a.addedAt || b.id - a.id,
@@ -261,6 +267,25 @@ export default function Main() {
     return items;
   };
 
+  /** Right-click on a sidebar section: act on everything in it. */
+  const sectionMenuItems = (f: Filter): MenuItem[] => {
+    const ds = all.filter((d) => inFilter(d, f, progress.get(d.id)));
+    const items: MenuItem[] = [];
+    if (f.kind === "status" && f.key === "failed")
+      items.push({ label: "Try all again", icon: RotateCcw, disabled: ds.length === 0, onClick: () => resume(ds) });
+    items.push({
+      label: ds.length === 0 ? "Nothing to delete" : ds.length === 1 ? "Delete 1 download…" : `Delete all ${ds.length} downloads…`,
+      icon: Trash2,
+      danger: true,
+      disabled: ds.length === 0,
+      onClick: () => {
+        setSelected(new Set(ds.map((d) => d.id)));
+        setDialog("delete");
+      },
+    });
+    return items;
+  };
+
   const queueOfFilter = filter.kind === "queue" ? queues.find((q) => q.id === filter.id) : undefined;
   const title =
     filter.kind === "status" ? STATUS_FILTERS.find((s) => s.key === filter.key)!.label : filter.kind === "category" ? category(filter.key).label : queueOfFilter?.name ?? "Queue";
@@ -325,6 +350,7 @@ export default function Main() {
                 active={filter.kind === "status" && filter.key === s.key}
                 warn={s.key === "failed" && (counts.failed ?? 0) > 0}
                 onClick={() => setFilter({ kind: "status", key: s.key })}
+                onMenu={(x, y) => setNavMenu({ x, y, f: { kind: "status", key: s.key } })}
               />
             ))}
           </div>
@@ -338,6 +364,7 @@ export default function Main() {
                 count={counts[`cat:${c.key}`]}
                 active={filter.kind === "category" && filter.key === c.key}
                 onClick={() => setFilter({ kind: "category", key: c.key })}
+                onMenu={(x, y) => setNavMenu({ x, y, f: { kind: "category", key: c.key } })}
               />
             ))}
           </div>
@@ -486,6 +513,7 @@ export default function Main() {
       )}
 
       {menu && <Menu anchor={menu} items={menuItems(menu.ids)} onClose={() => setMenu(null)} />}
+      {navMenu && <Menu anchor={navMenu} items={sectionMenuItems(navMenu.f)} onClose={() => setNavMenu(null)} />}
       {dialog === "settings" && (
         <SettingsDialog
           initialTab={settingsTab}
@@ -625,6 +653,7 @@ function NavItem({
   warn,
   badge,
   onClick,
+  onMenu,
 }: {
   icon: typeof Layers;
   label: string;
@@ -633,10 +662,19 @@ function NavItem({
   warn?: boolean;
   badge?: React.ReactNode;
   onClick: () => void;
+  /** Right-click, with the pointer position. */
+  onMenu?: (x: number, y: number) => void;
 }) {
   return (
     <button
       onClick={onClick}
+      onContextMenu={
+        onMenu &&
+        ((e) => {
+          e.preventDefault();
+          onMenu(e.clientX, e.clientY);
+        })
+      }
       aria-current={active ? "page" : undefined}
       className={`w-full flex items-center gap-2.5 h-8 px-2.5 rounded-lg text-left cursor-pointer transition-colors duration-150 ${
         active ? "bg-surface shadow-[var(--shadow-card)] font-medium" : "hover:bg-hover"

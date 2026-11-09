@@ -90,6 +90,12 @@ export function installMockBackend() {
           return location.search.includes("empty") ? [] : downloads;
         case "get_download":
           return downloads.find((d) => d.id === args.id) ?? null;
+        case "delete_download": {
+          const i = downloads.findIndex((d) => d.id === args.id);
+          if (i >= 0) downloads.splice(i, 1);
+          emit("download-removed", args.id);
+          return null;
+        }
         case "get_settings":
           return structuredClone(settings);
         case "save_settings":
