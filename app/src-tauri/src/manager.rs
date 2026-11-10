@@ -142,6 +142,7 @@ impl Manager {
             }
             active.insert(id, Active { cancel: cancel.clone(), queue });
         }
+        let rec = if rec.kind == Kind::Http { self.with_free_name(rec) } else { rec };
         self.db().mark_started(id)?;
         self.emit_record(id);
         if show_window && self.settings().show_progress_window {
@@ -154,10 +155,18 @@ impl Manager {
         tauri::async_runtime::spawn(async move {
             let result = match rec.kind {
                 Kind::Http => match me.run_http(&rec, cancel.clone()).await {
-                    Err(e) if e.to_string().starts_with("link expired") => match me.refresh_from_page(&rec).await {
-                        Some(video) => me.run_video(&video, cancel).await,
-                        None => Err(e),
-                    },
+                    Err(e) if link_died(&e.to_string()) => {
+                        if let Some(fresh) = me.relink_from_page(&rec).await {
+                            me.run_http(&fresh, cancel).await
+                        } else if !e.to_string().contains("404") {
+                            match me.refresh_from_page(&rec).await {
+                                Some(video) => me.run_video(&video, cancel).await,
+                                None => Err(e),
+                            }
+                        } else {
+                            Err(e)
+                        }
+                    }
                     r => r,
                 },
                 Kind::Video => me.run_video(&rec, cancel).await,
@@ -227,6 +236,32 @@ impl Manager {
             Ok(_) => Ok(Finish::Paused { downloaded: p.downloaded, total: p.total }),
             Err(e) => Err(anyhow!(e.to_string())),
         }
+    }
+
+    /// Renames a direct download whose file another download is already
+    /// writing (see `free_file_name`).
+    fn with_free_name(&self, mut rec: DownloadRecord) -> DownloadRecord {
+        let running: HashSet<i64> = self.active.lock().unwrap().keys().copied().collect();
+        let name = free_file_name(&self.db(), &rec, &running);
+        if name != rec.file_name {
+            let _ = self.db().set_file(rec.id, &name, None);
+            rec.file_name = name;
+        }
+        rec
+    }
+
+    /// A direct link died, often mid-download: video sites hand out links
+    /// that work for an hour or two, then answer "404" or "410". If the page
+    /// it came from links to the same file under a fresh address, carry on
+    /// from there (the part already downloaded is kept when the server
+    /// confirms it's the same file). `None` when the page has nothing newer.
+    async fn relink_from_page(&self, rec: &DownloadRecord) -> Option<DownloadRecord> {
+        let page = rec.page_url.as_deref().filter(|p| *p != rec.url && p.starts_with("http"))?;
+        let found = crate::capture::page_videos(self, page, &rec.headers).await;
+        let fresh = video::same_file_elsewhere(&rec.url, &found)?;
+        self.db().set_url(rec.id, &fresh, None).ok()?;
+        self.emit_record(rec.id);
+        self.db().get(rec.id).ok().flatten()
     }
 
     /// A direct link the browser handed over expired: video sites sign them
@@ -616,6 +651,38 @@ fn rand_token() -> u64 {
     h.finish()
 }
 
+/// The engine's errors for a link that no longer works.
+fn link_died(err: &str) -> bool {
+    err.starts_with("link expired") || err == "server returned HTTP 404"
+}
+
+/// The file name a direct download should save under: its own, unless an
+/// older unfinished download, or one running right now, already saves to that
+/// name in the same folder. Two transfers writing the same temporary file wreck
+/// each other ("disk error: The system cannot find the file specified"), which
+/// happened when two videos were both called "video.mp4". The newcomer gets
+/// " (1)", " (2)", … instead.
+pub fn free_file_name(db: &Db, rec: &DownloadRecord, running: &HashSet<i64>) -> String {
+    let dir = Path::new(&rec.dest_dir);
+    let others: Vec<DownloadRecord> = db
+        .list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| d.id != rec.id && d.status != Status::Completed && Path::new(&d.dest_dir) == dir)
+        .collect();
+    let same = |a: &str, b: &str| a.to_lowercase() == b.to_lowercase();
+    if !others.iter().any(|d| same(&d.file_name, &rec.file_name) && (d.id < rec.id || running.contains(&d.id))) {
+        return rec.file_name.clone();
+    }
+    let path = Path::new(&rec.file_name);
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (1..)
+        .map(|n| format!("{stem} ({n}){ext}"))
+        .find(|c| !others.iter().any(|d| same(&d.file_name, c)) && !dir.join(c).exists() && !dir.join(format!("{c}.part")).exists())
+        .unwrap()
+}
+
 /// The name (without extension) a video download should save under. If a
 /// finished file or another unfinished download already uses it, " (1)",
 /// " (2)", … is added, so downloading the same title again makes a new file
@@ -712,6 +779,44 @@ mod tests {
             description: String::new(),
             resumable: true,
         }
+    }
+
+    #[test]
+    fn two_downloads_never_share_a_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open(&tmp.path().join("t.db")).unwrap();
+        let dir = tmp.path();
+        let direct = |name: &str| NewDownload { kind: Kind::Http, video_format: None, ..video(name, dir) };
+        let get = |id| db.get(id).unwrap().unwrap();
+        let none = HashSet::new();
+
+        // The first "video.mp4" keeps its name; a second one added while the
+        // first is unfinished gets a number, whichever of them starts.
+        let a = db.insert(&direct("video.mp4"), Status::Paused).unwrap();
+        let b = db.insert(&direct("Video.MP4"), Status::Paused).unwrap();
+        assert_eq!(free_file_name(&db, &get(a), &none), "video.mp4");
+        assert_eq!(free_file_name(&db, &get(b), &none), "Video (1).MP4", "names differing only in case are the same file on Windows");
+
+        // Numbers already used by a download or a file are skipped.
+        db.set_file(b, "video (1).mp4", None).unwrap();
+        std::fs::write(dir.join("video (2).mp4.part"), b"half").unwrap();
+        let c = db.insert(&direct("video.mp4"), Status::Paused).unwrap();
+        assert_eq!(free_file_name(&db, &get(c), &none), "video (3).mp4");
+
+        // An older download gives way only to one that is running right now.
+        db.set_file(c, "clip.mp4", None).unwrap();
+        let d = db.insert(&direct("clip.mp4"), Status::Paused).unwrap();
+        assert_eq!(free_file_name(&db, &get(c), &none), "clip.mp4");
+        assert_eq!(free_file_name(&db, &get(c), &HashSet::from([d])), "clip (1).mp4");
+
+        // Finished downloads and other folders don't count (the engine
+        // numbers a name whose finished file exists).
+        db.set_status(a, Status::Completed, None).unwrap();
+        let e = db.insert(&direct("video.mp4"), Status::Paused).unwrap();
+        assert_eq!(free_file_name(&db, &get(e), &none), "video.mp4");
+
+        assert!(link_died("link expired or access denied (HTTP 410); refresh the download address"));
+        assert!(link_died("server returned HTTP 404") && !link_died("server returned HTTP 500") && !link_died("network error: reset"));
     }
 
     #[test]

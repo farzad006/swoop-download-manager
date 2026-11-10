@@ -155,6 +155,21 @@ fn is_reset(err: &str) -> bool {
 static IPV4_HOSTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(Default::default);
 
+/// Hosts that refused yt-dlp's own connection (403) but answered one made the
+/// way Chrome does; later requests start that way.
+static BROWSER_HOSTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Cleared when yt-dlp reports it can't imitate a browser (curl_cffi missing).
+static CAN_IMPERSONATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// One yt-dlp run may take this long to look a video up before it's stopped
+/// (a search or channel page would otherwise be read for minutes).
+const LOOKUP_LIMIT: std::time::Duration = std::time::Duration::from_secs(40);
+/// Dropped connections are retried within this long of starting a lookup.
+const LOOKUP_RETRY_WINDOW: std::time::Duration = std::time::Duration::from_secs(30);
+pub const TOO_SLOW: &str = "The site took too long to answer. Try again in a moment.";
+
 /// Retry policy for connections that drop mid-request. Some sites' IPv6
 /// servers cut off a share of connections (seen over VPN tunnels such as
 /// Cloudflare WARP) while IPv4 works; browsers hide this by retrying, yt-dlp
@@ -166,6 +181,10 @@ pub struct NetworkRetry {
     host: Option<String>,
     pub ipv4: bool,
     started_ipv4: bool,
+    /// Connect the way Chrome does (`--impersonate chrome`): some video
+    /// servers answer anything else with "403 Forbidden".
+    pub browser: bool,
+    started_browser: bool,
     attempt: u32,
     all_reset: bool,
 }
@@ -177,7 +196,26 @@ impl NetworkRetry {
     pub fn new(url: &str) -> Self {
         let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned));
         let ipv4 = host.as_ref().is_some_and(|h| IPV4_HOSTS.lock().unwrap().contains(h));
-        Self { host, ipv4, started_ipv4: ipv4, attempt: 1, all_reset: true }
+        let browser = host.as_ref().is_some_and(|h| BROWSER_HOSTS.lock().unwrap().contains(h));
+        Self { host, ipv4, started_ipv4: ipv4, browser, started_browser: browser, attempt: 1, all_reset: true }
+    }
+
+    /// After a refused request (403): switch to connecting like a browser.
+    /// True when something changed and the request is worth repeating.
+    pub fn try_browser(&mut self, err: &str) -> bool {
+        use std::sync::atomic::Ordering;
+        let e = err.to_ascii_lowercase();
+        if self.browser && e.contains("impersonate target") {
+            // This yt-dlp can't do it (curl_cffi isn't installed): stop asking.
+            CAN_IMPERSONATE.store(false, Ordering::Relaxed);
+            self.browser = false;
+            return true;
+        }
+        if self.browser || !CAN_IMPERSONATE.load(Ordering::Relaxed) || !e.contains("http error 403") {
+            return false;
+        }
+        self.browser = true;
+        true
     }
 
     /// After a failed attempt: how long to wait before trying again, or `None` to give up.
@@ -196,6 +234,11 @@ impl NetworkRetry {
         if self.ipv4 && !self.started_ipv4 {
             if let Some(h) = &self.host {
                 IPV4_HOSTS.lock().unwrap().insert(h.clone());
+            }
+        }
+        if self.browser && !self.started_browser {
+            if let Some(h) = &self.host {
+                BROWSER_HOSTS.lock().unwrap().insert(h.clone());
             }
         }
     }
@@ -220,13 +263,15 @@ impl NetworkRetry {
 
 pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<&str>) -> Result<VideoInfo, String> {
     let mut retry = NetworkRetry::new(url);
+    let started = std::time::Instant::now();
     let (mut signed_in, mut repaired) = (true, false);
     loop {
-        match info_once(url, headers, cookies_file, signed_in, retry.ipv4).await {
+        match info_once(url, headers, cookies_file, signed_in, &retry).await {
             Ok(i) => {
                 retry.succeeded();
                 return Ok(i);
             }
+            Err(e) if retry.try_browser(&e) => {}
             Err(e) if signed_in && has_login(headers, cookies_file) && signed_out_may_help(&e) => signed_in = false,
             Err(e) if !repaired && is_broken_install(&e) => {
                 repaired = true;
@@ -235,27 +280,29 @@ pub async fn info(url: &str, headers: &[(String, String)], cookies_file: Option<
                 }
             }
             Err(e) => match retry.should_retry(&e) {
-                Some(wait) => tokio::time::sleep(wait).await,
-                None => return Err(retry.give_up_message(e)),
+                // A lookup someone is waiting for doesn't retry for minutes.
+                Some(wait) if started.elapsed() < LOOKUP_RETRY_WINDOW => tokio::time::sleep(wait).await,
+                _ => return Err(retry.give_up_message(e)),
             },
         }
     }
 }
 
-async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option<&str>, signed_in: bool, force_ipv4: bool) -> Result<VideoInfo, String> {
+async fn info_once(url: &str, headers: &[(String, String)], cookies_file: Option<&str>, signed_in: bool, route: &NetworkRetry) -> Result<VideoInfo, String> {
     let mut cmd = command(&ytdlp()?);
-    cmd.arg("-J").args(common_args(headers, cookies_file, signed_in));
-    if force_ipv4 {
+    cmd.arg("-J").args(common_args(headers, cookies_file, signed_in)).args(["--socket-timeout", "15"]);
+    if route.ipv4 {
         cmd.arg("--force-ipv4");
     }
-    let out = cmd
-        .arg("--")
-        .arg(url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
+    if route.browser {
+        cmd.args(["--impersonate", "chrome"]);
+    }
+    let run = cmd.arg("--").arg(url).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+    // Stopped (and yt-dlp killed, see `command`) when it takes too long.
+    let out = match tokio::time::timeout(LOOKUP_LIMIT, run).await {
+        Ok(out) => out.map_err(|e| e.to_string())?,
+        Err(_) => return Err(TOO_SLOW.into()),
+    };
     if !out.status.success() {
         return Err(friendly_error(&String::from_utf8_lossy(&out.stderr)));
     }
@@ -363,23 +410,59 @@ impl InfoCache {
     }
 }
 
-/// Looks up a page's video: the page first, then any stream manifests the
-/// extension spotted. Stops early on DRM (nothing else will work).
+/// Looks up a page's video: the page, and any stream manifests the extension
+/// spotted. The page and the first stream are looked up at the same time (a
+/// page yt-dlp can't read, or one that keeps dropping, then costs no extra
+/// wait); a readable page wins. Stops early on DRM (nothing else will work).
 pub async fn extract(page_url: &str, manifests: &[String], headers: &[(String, String)], cookies_file: Option<&str>) -> InfoResult {
-    let mut error = None;
-    for url in std::iter::once(page_url.to_string()).chain(manifests.iter().cloned()) {
-        match info(&url, headers, cookies_file).await {
-            Ok(i) => return Ok((i, url)),
-            Err(e) => {
-                let drm = e.contains("DRM");
-                error = Some(keep_error(error, e));
-                if drm {
-                    break;
-                }
+    let mut streams = manifests.iter().take(3);
+    // yt-dlp rewrites its cookie file when it ends: the second run gets a copy.
+    let cookie_copy = cookies_file.map(|c| format!("{c}.stream"));
+    let forget_copy = || {
+        if let Some(c) = &cookie_copy {
+            let _ = std::fs::remove_file(c);
+        }
+    };
+    let first = streams.next().map(|m| {
+        let (url, h) = (m.clone(), headers.to_vec());
+        let cookies = cookie_copy.clone().filter(|copy| cookies_file.is_some_and(|c| std::fs::copy(c, copy).is_ok()));
+        let task = tauri::async_runtime::spawn(async move { info(&url, &h, cookies.as_deref()).await });
+        (m.clone(), task)
+    });
+    let mut error = match info(page_url, headers, cookies_file).await {
+        Ok(i) => {
+            if let Some((_, task)) = &first {
+                task.abort();
             }
+            forget_copy();
+            return Ok((i, page_url.to_string()));
+        }
+        Err(e) => e,
+    };
+    if let Some((url, task)) = first {
+        if error.contains("DRM") {
+            task.abort();
+            forget_copy();
+            return Err(error);
+        }
+        let found = task.await;
+        forget_copy();
+        match found {
+            Ok(Ok(i)) => return Ok((i, url)),
+            Ok(Err(e)) => error = keep_error(Some(error), e),
+            Err(_) => {}
         }
     }
-    Err(error.unwrap_or_else(|| "No downloadable video was found on this page.".into()))
+    for url in streams {
+        if error.contains("DRM") {
+            break;
+        }
+        match info(url, headers, cookies_file).await {
+            Ok(i) => return Ok((i, url.clone())),
+            Err(e) => error = keep_error(Some(error), e),
+        }
+    }
+    Err(error)
 }
 
 /// Which error to show when the page and the streams the browser played all
@@ -436,6 +519,17 @@ pub fn videos_in_page(html: &str, page: &str) -> Vec<String> {
     }
     found.sort_by_key(|u| std::cmp::Reverse(height_hint(u).unwrap_or(0)));
     found
+}
+
+/// A dead link's replacement among the files a page links to now: the one
+/// with the same file name under a different address ("…/6af1/720.mp4" →
+/// "…/6b02/720.mp4"). `None` if there's none, or several to choose from.
+pub fn same_file_elsewhere(old: &str, found: &[String]) -> Option<String> {
+    let name = |u: &str| u.split(['?', '#']).next().and_then(|p| p.rsplit('/').next()).map(str::to_ascii_lowercase);
+    let wanted = name(old).filter(|n| !n.is_empty())?;
+    let mut fresh = found.iter().filter(|u| u.as_str() != old && name(u).as_deref() == Some(wanted.as_str()));
+    let first = fresh.next()?;
+    fresh.next().is_none().then(|| first.clone())
 }
 
 /// The height a video file's name gives away ("480P_2000K_123.mp4",
@@ -525,11 +619,13 @@ pub async fn download(
     let mut retry = NetworkRetry::new(job.url);
     let (mut signed_in, mut repaired) = (true, false);
     loop {
-        match download_once(&job, signed_in, &cancel, &mut on_progress, retry.ipv4).await {
+        match download_once(&job, signed_in, &cancel, &mut on_progress, retry.ipv4, retry.browser).await {
             Ok(r) => {
                 retry.succeeded();
                 return Ok(r);
             }
+            // Refused (403): try once more connecting the way a browser does.
+            Err(e) if retry.try_browser(&e) => {}
             // Nothing downloadable while signed in: try once more without cookies.
             Err(e) if signed_in && has_login(job.headers, job.cookies_file) && signed_out_may_help(&e) => signed_in = false,
             Err(e) if !repaired && is_broken_install(&e) => {
@@ -555,6 +651,7 @@ async fn download_once(
     cancel: &CancellationToken,
     on_progress: &mut impl FnMut(VideoProgress),
     force_ipv4: bool,
+    browser: bool,
 ) -> Result<Option<PathBuf>, String> {
     std::fs::create_dir_all(job.dest_dir).map_err(|e| e.to_string())?;
     let template = job.dest_dir.join(format!("{}.%(ext)s", job.stem.replace('%', "%%")));
@@ -577,6 +674,9 @@ async fn download_once(
     }
     if force_ipv4 {
         cmd.arg("--force-ipv4");
+    }
+    if browser {
+        cmd.args(["--impersonate", "chrome"]);
     }
     cmd.arg("--").arg(job.url).stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -784,14 +884,21 @@ async fn ytdlp_works(exe: &Path) -> bool {
 }
 
 /// `[default]` adds yt-dlp-ejs, the solver YouTube's JavaScript challenges
-/// need; without it signed-in requests see only thumbnails.
+/// need; without it signed-in requests see only thumbnails. `curl-cffi` lets
+/// yt-dlp connect the way a browser does, which some video servers insist on
+/// (see `NetworkRetry::try_browser`); where it can't be installed, yt-dlp is
+/// still updated without it.
 async fn pip_install(py: &Path, upgrade: bool) {
-    let mut cmd = command(py);
-    cmd.args(["-m", "pip", "install", "--quiet"]);
-    if upgrade {
-        cmd.arg("-U");
+    for package in ["yt-dlp[default,curl-cffi]", "yt-dlp[default]"] {
+        let mut cmd = command(py);
+        cmd.args(["-m", "pip", "install", "--quiet"]);
+        if upgrade {
+            cmd.arg("-U");
+        }
+        if cmd.arg(package).output().await.is_ok_and(|o| o.status.success()) {
+            break;
+        }
     }
-    let _ = cmd.arg("yt-dlp[default]").output().await;
 }
 
 /// Reinstalls a broken pip install of yt-dlp. Returns whether it works now.
@@ -1111,6 +1218,32 @@ ERROR: [PornHub] 64d4a599b042b: No video formats found!; please report this issu
         assert_eq!(keep_error(Some(page.clone()), "[generic] index-v1-a1: HTTP Error 410: Gone".into()), page);
         let drm = "This video is DRM-protected and can't be downloaded.".to_string();
         assert_eq!(keep_error(Some(page), drm.clone()), drm);
+    }
+
+    #[test]
+    fn a_dead_link_is_replaced_by_the_same_file_on_the_page() {
+        let old = "https://s84.cdn.example/pubs/6af16e12.1/720.mp4";
+        let page = |urls: &[&str]| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>();
+        let now = page(&["https://s84.cdn.example/pubs/6b02aa10.7/1080.mp4", "https://s84.cdn.example/pubs/6b02aa10.7/720.MP4?x=1", "https://s84.cdn.example/pubs/6b02aa10.7/360.mp4"]);
+        assert_eq!(same_file_elsewhere(old, &now).as_deref(), Some("https://s84.cdn.example/pubs/6b02aa10.7/720.MP4?x=1"));
+        assert_eq!(same_file_elsewhere(old, &page(&[old, "https://s84.cdn.example/pubs/6b02aa10.7/1080.mp4"])), None, "the page still has only the dead link");
+        assert_eq!(same_file_elsewhere(old, &page(&["https://a.example/1/720.mp4", "https://a.example/2/720.mp4"])), None, "two candidates: can't tell which");
+        assert_eq!(same_file_elsewhere(old, &[]), None);
+    }
+
+    #[test]
+    fn a_refused_request_is_repeated_like_a_browser() {
+        const REFUSED: &str = "[generic] master: Unable to download webpage: HTTP Error 403: Forbidden (caused by <HTTPError 403: Forbidden>)";
+        let mut r = NetworkRetry::new("https://cdn.retry-test-browser.example/hls/master.m3u8?t=1");
+        assert!(!r.browser, "the normal connection first");
+        assert!(!r.try_browser("ERROR: Video unavailable") && !r.try_browser(SSL_EOF), "only a refusal switches");
+        assert!(r.try_browser(REFUSED) && r.browser);
+        assert!(!r.try_browser(REFUSED), "refused again: nothing more to change");
+        r.succeeded();
+        assert!(NetworkRetry::new("https://cdn.retry-test-browser.example/hls/index.m3u8").browser, "remembered for this server");
+        assert!(!NetworkRetry::new("https://cdn.retry-test-other.example/v").browser);
+
+        assert!(!is_transient(TOO_SLOW), "a lookup that ran out of time isn't repeated");
     }
 
     #[test]
